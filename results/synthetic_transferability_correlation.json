@@ -1,0 +1,64 @@
+{
+  "config": {
+    "name": "synthetic_transferability",
+    "seed": 21,
+    "selector": "correlation",
+    "output_dir": "results",
+    "data": {
+      "dataset_bundle": "./datasets",
+      "dataset_name": "etth1",
+      "file_name": "ETT-small/ETTh1.csv",
+      "episode_mode": "real",
+      "task_name": "long_term_forecast",
+      "features": "M",
+      "target": "OT",
+      "freq": "h",
+      "seq_len": 96,
+      "label_len": 48,
+      "pred_len": 336,
+      "train_ratio": 0.7,
+      "val_ratio": 0.1,
+      "test_ratio": 0.2,
+      "window_stride": 8,
+      "max_windows_per_split": 256,
+      "train_episodes": 100,
+      "val_episodes": 30,
+      "test_episodes": 30,
+      "batch_size": 16,
+      "num_sources": 6,
+      "target_dim": 10,
+      "source_dim": 10,
+      "horizon": 4,
+      "helpful_delta": 1.5,
+      "harmful_delta": -0.5,
+      "source_signal_scale": 0.4,
+      "target_signal_scale": 0.6,
+      "noise_scale": 0.1
+    },
+    "model": {
+      "hidden_dim": 24,
+      "energy_temperature": 0.7
+    },
+    "optim": {
+      "lr": 0.001,
+      "epochs": 5,
+      "forecast_loss_weight": 1.0,
+      "transfer_loss_weight": 0.5,
+      "target_temperature": 0.7
+    }
+  },
+  "train_history": [],
+  "validation_history": [
+    {
+      "epoch": 0,
+      "forecast_nll": 211.7123016357422,
+      "top1_alignment": 0.13125,
+      "oracle_hit_rate": 0.13125
+    }
+  ],
+  "test_metrics": {
+    "forecast_nll": 122.79308462142944,
+    "top1_alignment": 0.21484375,
+    "oracle_hit_rate": 0.21484375
+  }
+}

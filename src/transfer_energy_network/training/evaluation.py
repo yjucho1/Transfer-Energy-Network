@@ -11,12 +11,18 @@ import torch
 from ..config import ExperimentConfig
 from ..data import EpisodeBatch
 from ..models.baselines import correlation_weights, oracle_weights, uniform_weights
-from .losses import gaussian_nll
+from .losses import gaussian_crps, gaussian_quantile, pinball_loss
 
 
 @dataclass
 class EpochMetrics:
-    forecast_nll: float
+    forecast_mse: float
+    forecast_mae: float
+    forecast_crps: float
+    forecast_q10_loss: float
+    forecast_q50_loss: float
+    forecast_q90_loss: float
+    forecast_mean_quantile_loss: float
     top1_alignment: float
     oracle_hit_rate: float
 
@@ -50,9 +56,17 @@ def build_forecast_from_weights(
     )
     pred_len = batch.forecast_target.shape[-1]
     last_value = pooled_sources[:, -1:].expand(-1, pred_len)
-    mean = last_value
-    scale = torch.full_like(mean, 0.1)
-    return mean, scale
+    median = last_value
+    return median, torch.full_like(median, 0.1)
+
+
+def compute_point_metrics(
+    target: torch.Tensor,
+    median_forecast: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    squared_error = (target - median_forecast).pow(2)
+    absolute_error = (target - median_forecast).abs()
+    return squared_error.mean(), absolute_error.mean()
 
 
 def evaluate_selector(
@@ -61,7 +75,13 @@ def evaluate_selector(
     config: ExperimentConfig,
     model: torch.nn.Module | None = None,
 ) -> EpochMetrics:
-    nlls: list[float] = []
+    mses: list[float] = []
+    maes: list[float] = []
+    crps_scores: list[float] = []
+    q10_losses: list[float] = []
+    q50_losses: list[float] = []
+    q90_losses: list[float] = []
+    mean_q_losses: list[float] = []
     alignments: list[float] = []
     oracle_hits: list[float] = []
 
@@ -76,7 +96,8 @@ def evaluate_selector(
             )
             weights = outputs["weights"].detach()
             top1 = weights.argmax(dim=-1)
-            nll = gaussian_nll(batch.forecast_target, outputs["mean"].detach(), outputs["scale"].detach())
+            median = outputs["mean"].detach()
+            scale = outputs["scale"].detach()
         elif selector == "correlation":
             weights = correlation_weights(
                 batch.target_context,
@@ -84,28 +105,46 @@ def evaluate_selector(
                 temperature=config.model.energy_temperature,
             )
             top1 = weights.argmax(dim=-1)
-            mean, scale = build_forecast_from_weights(batch, weights, config)
-            nll = gaussian_nll(batch.forecast_target, mean, scale)
+            median, scale = build_forecast_from_weights(batch, weights, config)
         elif selector == "uniform":
             weights = uniform_weights(batch.target_context, batch.source_candidates)
             top1 = weights.argmax(dim=-1)
-            mean, scale = build_forecast_from_weights(batch, weights, config)
-            nll = gaussian_nll(batch.forecast_target, mean, scale)
+            median, scale = build_forecast_from_weights(batch, weights, config)
         elif selector == "oracle":
             weights = oracle_weights(batch.validation_delta)
             top1 = weights.argmax(dim=-1)
-            mean, scale = build_forecast_from_weights(batch, weights, config)
-            nll = gaussian_nll(batch.forecast_target, mean, scale)
+            median, scale = build_forecast_from_weights(batch, weights, config)
         else:
             raise ValueError(f"Unknown selector: {selector}")
         oracle_top1 = batch.validation_delta.argmax(dim=-1)
+        mse, mae = compute_point_metrics(batch.forecast_target, median)
+        crps = gaussian_crps(batch.forecast_target, median, scale)
+        q10 = gaussian_quantile(median, scale, 0.1)
+        q50 = gaussian_quantile(median, scale, 0.5)
+        q90 = gaussian_quantile(median, scale, 0.9)
+        q10_loss = pinball_loss(batch.forecast_target, q10, 0.1)
+        q50_loss = pinball_loss(batch.forecast_target, q50, 0.5)
+        q90_loss = pinball_loss(batch.forecast_target, q90, 0.9)
+        mean_q_loss = (q10_loss + q50_loss + q90_loss) / 3.0
 
-        nlls.append(float(nll.item()))
+        mses.append(float(mse.item()))
+        maes.append(float(mae.item()))
+        crps_scores.append(float(crps.item()))
+        q10_losses.append(float(q10_loss.item()))
+        q50_losses.append(float(q50_loss.item()))
+        q90_losses.append(float(q90_loss.item()))
+        mean_q_losses.append(float(mean_q_loss.item()))
         alignments.append(float((top1 == oracle_top1).float().mean().item()))
         oracle_hits.append(float((top1 == batch.oracle_index).float().mean().item()))
 
     return EpochMetrics(
-        forecast_nll=sum(nlls) / len(nlls),
+        forecast_mse=sum(mses) / len(mses),
+        forecast_mae=sum(maes) / len(maes),
+        forecast_crps=sum(crps_scores) / len(crps_scores),
+        forecast_q10_loss=sum(q10_losses) / len(q10_losses),
+        forecast_q50_loss=sum(q50_losses) / len(q50_losses),
+        forecast_q90_loss=sum(q90_losses) / len(q90_losses),
+        forecast_mean_quantile_loss=sum(mean_q_losses) / len(mean_q_losses),
         top1_alignment=sum(alignments) / len(alignments),
         oracle_hit_rate=sum(oracle_hits) / len(oracle_hits),
     )

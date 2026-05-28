@@ -105,17 +105,23 @@ In code, the joint objective is:
 - forecast loss: Gaussian negative log-likelihood on the target horizon
 - transfer loss: cross-entropy between `softmax(Delta / tau)` and `softmax(-E / tau)`
 
-For the current real CSV loader, `Delta_i` is approximated more directly than simple correlation: each source is converted into a target-scale proxy forecast, compared against a target-only persistence baseline on the future horizon, and then slightly regularized with history and trend agreement scores.
+For the current real CSV loader, `Delta_i` is now closer to true adaptation. The default path can use a lightweight PatchTST-style adaptation model: for each batch of target windows, it fits a target-only forecaster and source-conditioned forecasters on adaptation samples extracted from the target history, compares their held-out validation losses, and uses that improvement as the main supervision signal. A very small history-agreement term is kept only as a tie-breaker.
 
 ## Repository Layout
 
 ```text
 configs/
-  ten_synthetic.toml
-  correlation_synthetic.toml
-  uniform_synthetic.toml
+  ten_etth1_patchtst.toml
+  correlation_etth1_patchtst.toml
+  uniform_etth1_patchtst.toml
 scripts/
   run_experiment.py
+  run_dataset_grid.sh
+  run_all_etth1.sh
+  run_all_etth2.sh
+  run_all_ettm1.sh
+  run_all_ettm2.sh
+  render_ett_horizon_table.py
 src/transfer_energy_network/
   __init__.py
   config.py
@@ -192,12 +198,46 @@ This synthetic example creates episodes with one more-useful source per target b
 To run a paper-style experiment and save a summary:
 
 ```bash
-python3 scripts/run_experiment.py configs/ten_synthetic.toml
-python3 scripts/run_experiment.py configs/correlation_synthetic.toml
-python3 scripts/run_experiment.py configs/uniform_synthetic.toml
+python3 scripts/run_experiment.py configs/ten_etth1_patchtst.toml
+python3 scripts/run_experiment.py configs/correlation_etth1_patchtst.toml
+python3 scripts/run_experiment.py configs/uniform_etth1_patchtst.toml
 ```
 
 Each run writes a JSON summary with train history, validation history, and test metrics.
+
+To run the standard ETT horizon grid `96/192/336/720` for one dataset:
+
+```bash
+bash scripts/run_all_etth1.sh
+bash scripts/run_all_etth2.sh
+bash scripts/run_all_ettm1.sh
+bash scripts/run_all_ettm2.sh
+```
+
+These scripts now run five seeds by default: `21, 22, 23, 24, 25`.
+
+If you want to override that list, you can pass explicit seeds:
+
+```bash
+bash scripts/run_all_etth1.sh 1 2 3 4 5
+```
+
+The scripts expand the base config into temporary horizon-specific runs and save results with names such as:
+
+```text
+results/etth1_h96_s21_patchtst_transferability_ten.json
+results/etth1_h192_s21_patchtst_transferability_ten.json
+results/etth1_h336_s21_patchtst_transferability_ten.json
+results/etth1_h720_s21_patchtst_transferability_ten.json
+```
+
+To render a horizon-specific benchmark table after the runs complete:
+
+```bash
+python3 scripts/render_ett_horizon_table.py
+```
+
+When multiple seed runs are present, the table renderer reports `mean ± std`. If only one run is present, it prints the single value.
 
 When you replace the current synthetic episode generator with real loaders, the expected dataset location is:
 

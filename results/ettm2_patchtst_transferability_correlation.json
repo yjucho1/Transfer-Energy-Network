@@ -1,18 +1,18 @@
 {
   "config": {
-    "name": "synthetic_transferability",
+    "name": "ettm2_patchtst_transferability",
     "seed": 21,
-    "selector": "uniform",
+    "selector": "correlation",
     "output_dir": "results",
     "data": {
       "dataset_bundle": "./datasets",
-      "dataset_name": "etth1",
-      "file_name": "ETT-small/ETTh1.csv",
+      "dataset_name": "ettm2",
+      "file_name": "ETT-small/ETTm2.csv",
       "episode_mode": "real",
       "task_name": "long_term_forecast",
       "features": "M",
       "target": "OT",
-      "freq": "h",
+      "freq": "15min",
       "seq_len": 96,
       "label_len": 48,
       "pred_len": 336,
@@ -65,26 +65,26 @@
   "validation_history": [
     {
       "epoch": 0,
-      "forecast_mse": 3.9959364414215086,
-      "forecast_mae": 1.9417695641517638,
-      "forecast_crps": 1.8853505373001098,
-      "forecast_q10_loss": 1.6322528958320617,
-      "forecast_q50_loss": 0.9708847820758819,
-      "forecast_q90_loss": 0.2069924682378769,
-      "forecast_mean_quantile_loss": 0.9367100417613983,
-      "top1_alignment": 0.11875,
-      "oracle_hit_rate": 0.11875
+      "forecast_mse": 1.334266028366983,
+      "forecast_mae": 0.9451260212808847,
+      "forecast_crps": 0.8926868587732315,
+      "forecast_q10_loss": 0.12197982100769877,
+      "forecast_q50_loss": 0.47256301064044237,
+      "forecast_q90_loss": 0.7271218560636044,
+      "forecast_mean_quantile_loss": 0.44055489636957645,
+      "top1_alignment": 0.1875,
+      "oracle_hit_rate": 0.1875
     }
   ],
   "test_metrics": {
-    "forecast_mse": 2.279152996838093,
-    "forecast_mae": 1.3391629755496979,
-    "forecast_crps": 1.2842792384326458,
-    "forecast_q10_loss": 1.0820731222629547,
-    "forecast_q50_loss": 0.6695814877748489,
-    "forecast_q90_loss": 0.157064541708678,
-    "forecast_mean_quantile_loss": 0.6362397186458111,
-    "top1_alignment": 0.13671875,
-    "oracle_hit_rate": 0.13671875
+    "forecast_mse": 0.802659422159195,
+    "forecast_mae": 0.6685617808252573,
+    "forecast_crps": 0.6181195862591267,
+    "forecast_q10_loss": 0.11572856374550611,
+    "forecast_q50_loss": 0.33428089041262865,
+    "forecast_q90_loss": 0.460072236135602,
+    "forecast_mean_quantile_loss": 0.30336056277155876,
+    "top1_alignment": 0.24609375,
+    "oracle_hit_rate": 0.24609375
   }
 }

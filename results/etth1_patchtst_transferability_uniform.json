@@ -1,6 +1,6 @@
 {
   "config": {
-    "name": "synthetic_transferability",
+    "name": "etth1_patchtst_transferability",
     "seed": 21,
     "selector": "uniform",
     "output_dir": "results",

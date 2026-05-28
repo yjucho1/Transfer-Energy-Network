@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F
 
 
 def gaussian_nll(
@@ -60,26 +59,29 @@ def pinball_loss(
     return torch.maximum(quantile * error, (quantile - 1.0) * error).mean()
 
 
-def transferability_targets(
-    validation_delta: torch.Tensor,
-    temperature: float = 1.0,
-) -> torch.Tensor:
-    """Convert validation improvements into soft supervision targets."""
-    if temperature <= 0:
-        raise ValueError("temperature must be positive")
-    return torch.softmax(validation_delta / temperature, dim=-1)
-
-
 def transferability_loss(
     energies: torch.Tensor,
     validation_delta: torch.Tensor,
-    temperature: float = 1.0,
+    margin: float = 0.2,
+    delta_threshold: float = 0.05,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Match low-energy assignments to sources with larger validation gains."""
-    target_weights = transferability_targets(
-        validation_delta=validation_delta,
-        temperature=temperature,
-    )
-    log_probs = F.log_softmax(-energies / temperature, dim=-1)
-    loss = -(target_weights * log_probs).sum(dim=-1).mean()
-    return loss, target_weights
+    """Rank low-energy sources ahead of less transferable ones with hinge loss."""
+    if margin < 0:
+        raise ValueError("margin must be non-negative")
+    if delta_threshold < 0:
+        raise ValueError("delta_threshold must be non-negative")
+
+    delta_diff = validation_delta.unsqueeze(-1) - validation_delta.unsqueeze(-2)
+    pair_mask = delta_diff > delta_threshold
+
+    energy_diff = energies.unsqueeze(-1) - energies.unsqueeze(-2)
+    pair_losses = torch.relu(energy_diff + margin)
+    masked_pair_losses = pair_losses * pair_mask.float()
+
+    valid_pair_count = pair_mask.float().sum()
+    if valid_pair_count.item() == 0:
+        zero = energies.new_zeros(())
+        return zero, pair_mask.float()
+
+    loss = masked_pair_losses.sum() / valid_pair_count
+    return loss, pair_mask.float()

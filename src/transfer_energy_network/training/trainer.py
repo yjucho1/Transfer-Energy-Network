@@ -17,6 +17,8 @@ class TrainingConfig:
     transfer_loss_weight: float = 1.0
     energy_temperature: float = 1.0
     target_temperature: float = 1.0
+    ranking_margin: float = 0.2
+    ranking_delta_threshold: float = 0.05
 
 
 def train_step(
@@ -43,7 +45,8 @@ def train_step(
     transfer_loss, target_weights = transferability_loss(
         energies=outputs["energies"],
         validation_delta=batch["validation_delta"],
-        temperature=config.target_temperature,
+        margin=config.ranking_margin,
+        delta_threshold=config.ranking_delta_threshold,
     )
 
     loss = (
@@ -58,7 +61,7 @@ def train_step(
         "forecast_loss": forecast_loss.detach(),
         "transfer_loss": transfer_loss.detach(),
         "weights": outputs["weights"].detach(),
-        "target_weights": target_weights.detach(),
+        "target_pairs": target_weights.detach(),
         "energies": outputs["energies"].detach(),
         "mean": outputs["mean"].detach(),
         "scale": outputs["scale"].detach(),

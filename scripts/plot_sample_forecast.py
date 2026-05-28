@@ -17,40 +17,101 @@ if SRC_ROOT not in sys.path:
 
 from transfer_energy_network.config import load_experiment_config
 from transfer_energy_network.data import load_ltsf_series
-from transfer_energy_network.models.baselines import correlation_weights, oracle_weights, uniform_weights
+from transfer_energy_network.models.baselines import oracle_weights
 from transfer_energy_network.training.losses import gaussian_quantile
 from transfer_energy_network.training.evaluation import build_forecast_from_weights
-from transfer_energy_network.training.experiment import build_model, load_episode_splits, set_seed
-from transfer_energy_network.training.trainer import TrainingConfig, train_step
+from transfer_energy_network.training.experiment import (
+    build_fixed_weight_model,
+    build_target_only_model,
+    get_best_checkpoint_path,
+    load_best_ten_model,
+    train_ten_model as fit_best_ten_model,
+    load_episode_splits,
+)
 
 
-def train_ten_model(config):
-    set_seed(config.seed)
-    train_episodes, _, test_episodes = load_episode_splits(config)
-    sample_batch = train_episodes[0]
-    model = build_model(
+def load_or_train_best_ten_model(config):
+    checkpoint_path = get_best_checkpoint_path(config)
+    if checkpoint_path.exists():
+        model, _, _, test_episodes, _ = load_best_ten_model(config)
+        return model, test_episodes
+
+    model, _, _, test_episodes, *_ = fit_best_ten_model(
         config,
+        save_best_checkpoint=True,
+    )
+    return model, test_episodes
+
+
+def load_best_target_only_model(
+    config,
+    config_path: Path,
+    target_only_config_override: str | None = None,
+):
+    if target_only_config_override is None:
+        target_only_config_path = config_path.with_name(
+            f"target_only_{config.data.dataset_name}_patchtst.toml"
+        )
+    else:
+        target_only_config_path = Path(target_only_config_override).resolve()
+    target_only_config = load_experiment_config(target_only_config_path)
+    checkpoint_path = get_best_checkpoint_path(target_only_config)
+
+    train_episodes, _, test_episodes = load_episode_splits(target_only_config)
+    sample_batch = train_episodes[0]
+    model = build_target_only_model(
+        target_only_config,
         target_dim=sample_batch.target_context.shape[-1],
-        source_dim=sample_batch.source_candidates.shape[-1],
         horizon=sample_batch.forecast_target.shape[-1],
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.optim.lr)
-    train_config = TrainingConfig(
-        forecast_loss_weight=config.optim.forecast_loss_weight,
-        transfer_loss_weight=config.optim.transfer_loss_weight,
-        energy_temperature=config.model.energy_temperature,
-        target_temperature=config.optim.target_temperature,
-    )
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    model.load_state_dict(payload["state_dict"])
+    model.eval()
+    return model, test_episodes
 
-    for _ in range(config.optim.epochs):
-        for batch in train_episodes:
-            train_step(model, optimizer, batch.as_dict(), train_config)
-    return model.eval(), test_episodes
+
+def load_best_fixed_weight_model(config, config_path: Path, selector: str):
+    baseline_config_path = config_path.with_name(
+        f"{selector}_{config.data.dataset_name}_patchtst.toml"
+    )
+    baseline_config = load_experiment_config(baseline_config_path)
+    checkpoint_path = get_best_checkpoint_path(baseline_config)
+
+    train_episodes, _, test_episodes = load_episode_splits(baseline_config)
+    sample_batch = train_episodes[0]
+    model = build_fixed_weight_model(
+        baseline_config,
+        target_dim=sample_batch.target_context.shape[-1],
+        horizon=sample_batch.forecast_target.shape[-1],
+        selector=selector,
+    )
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    model.load_state_dict(payload["state_dict"])
+    model.eval()
+    return model, test_episodes
+
+
+def get_target_denormalization_stats(config):
+    loaded = load_ltsf_series(config.data)
+    train_end = int(loaded.values.shape[0] * config.data.train_ratio)
+    train_values = loaded.values[:train_end]
+    target_mean = train_values[:, loaded.target_index].mean()
+    target_std = train_values[:, loaded.target_index].std().clamp_min(1e-5)
+    return target_mean, target_std
+
+
+def denormalize_target(values: torch.Tensor, target_mean: torch.Tensor, target_std: torch.Tensor) -> torch.Tensor:
+    return values * target_std + target_mean
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot one forecast comparison sample.")
     parser.add_argument("config", help="Path to TOML config")
+    parser.add_argument(
+        "--target-only-config",
+        default=None,
+        help="Optional target-only TOML config to overlay in the plot.",
+    )
     parser.add_argument("--sample-index", type=int, default=0)
     parser.add_argument(
         "--output",
@@ -59,9 +120,29 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = load_experiment_config(args.config)
-    model, test_episodes = train_ten_model(config)
+    config_path = Path(args.config).resolve()
+    config = load_experiment_config(config_path)
+    model, test_episodes = load_or_train_best_ten_model(config)
+    target_only_model, target_only_test_episodes = load_best_target_only_model(
+        config,
+        config_path,
+        args.target_only_config,
+    )
+    correlation_model, correlation_test_episodes = load_best_fixed_weight_model(
+        config,
+        config_path,
+        "correlation",
+    )
+    uniform_model, uniform_test_episodes = load_best_fixed_weight_model(
+        config,
+        config_path,
+        "uniform",
+    )
+    target_mean, target_std = get_target_denormalization_stats(config)
     batch = test_episodes[0]
+    target_only_batch = target_only_test_episodes[0]
+    correlation_batch = correlation_test_episodes[0]
+    uniform_batch = uniform_test_episodes[0]
     sample_idx = args.sample_index
     loaded = load_ltsf_series(config.data)
     seq_len = config.data.seq_len
@@ -79,19 +160,24 @@ def main() -> None:
         ten_scale = ten_outputs["scale"][sample_idx].cpu()
         ten_q10 = gaussian_quantile(ten_pred, ten_scale, 0.1)
         ten_q90 = gaussian_quantile(ten_pred, ten_scale, 0.9)
-
-    corr_weights = correlation_weights(
-        batch.target_context,
-        batch.source_candidates,
-        temperature=config.model.energy_temperature,
-    )
-    corr_pred, _ = build_forecast_from_weights(batch, corr_weights, config)
-
-    uniform_pred, _ = build_forecast_from_weights(
-        batch,
-        uniform_weights(batch.target_context, batch.source_candidates),
-        config,
-    )
+        target_only_outputs = target_only_model(
+            target_only_batch.target_context,
+            target_only_batch.source_candidates,
+            temperature=config.model.energy_temperature,
+        )
+        target_only_pred = target_only_outputs["mean"][sample_idx].cpu()
+        correlation_outputs = correlation_model(
+            correlation_batch.target_context,
+            correlation_batch.source_candidates,
+            temperature=config.model.energy_temperature,
+        )
+        correlation_pred = correlation_outputs["mean"][sample_idx].cpu()
+        uniform_outputs = uniform_model(
+            uniform_batch.target_context,
+            uniform_batch.source_candidates,
+            temperature=config.model.energy_temperature,
+        )
+        uniform_pred = uniform_outputs["mean"][sample_idx].cpu()
     oracle_pred, _ = build_forecast_from_weights(
         batch,
         oracle_weights(batch.validation_delta),
@@ -99,6 +185,16 @@ def main() -> None:
     )
 
     actual = batch.forecast_target[sample_idx].cpu()
+    target_history = denormalize_target(target_history, target_mean, target_std)
+    actual = denormalize_target(actual, target_mean, target_std)
+    ten_pred = denormalize_target(ten_pred, target_mean, target_std)
+    ten_q10 = denormalize_target(ten_q10, target_mean, target_std)
+    ten_q90 = denormalize_target(ten_q90, target_mean, target_std)
+    target_only_pred = denormalize_target(target_only_pred, target_mean, target_std)
+    correlation_pred = denormalize_target(correlation_pred, target_mean, target_std)
+    uniform_pred = denormalize_target(uniform_pred, target_mean, target_std)
+    oracle_pred = denormalize_target(oracle_pred[sample_idx].cpu(), target_mean, target_std)
+
     future_x = torch.arange(seq_len, seq_len + actual.shape[0]).cpu()
     history_x = torch.arange(seq_len).cpu()
 
@@ -118,7 +214,16 @@ def main() -> None:
     plt.plot(future_x, ten_pred, label="TEN", color="#C44E52", linewidth=2.0, zorder=4)
     plt.plot(
         future_x,
-        corr_pred[sample_idx].cpu(),
+        target_only_pred,
+        label="Target-only PatchTST",
+        color="#DD8452",
+        linewidth=2.0,
+        linestyle="-.",
+        zorder=4,
+    )
+    plt.plot(
+        future_x,
+        correlation_pred,
         label="Correlation",
         color="#4C72B0",
         linewidth=1.8,
@@ -126,7 +231,7 @@ def main() -> None:
     )
     plt.plot(
         future_x,
-        uniform_pred[sample_idx].cpu(),
+        uniform_pred,
         label="Uniform",
         color="#55A868",
         linewidth=1.8,
@@ -134,7 +239,7 @@ def main() -> None:
     )
     plt.plot(
         future_x,
-        oracle_pred[sample_idx].cpu(),
+        oracle_pred,
         label="Oracle",
         color="#8172B2",
         linewidth=2.2,
@@ -146,7 +251,7 @@ def main() -> None:
     )
     plt.title(f"Forecast Comparison on {config.data.dataset_name} Test Sample {sample_idx}")
     plt.xlabel("Time Step")
-    plt.ylabel("Normalized Target Value")
+    plt.ylabel(f"{config.data.target} (Original Scale)")
     plt.legend(frameon=False, ncol=3)
     plt.grid(alpha=0.25)
     plt.tight_layout()

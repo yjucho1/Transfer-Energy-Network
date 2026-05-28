@@ -33,6 +33,10 @@ class ExperimentSummary:
     train_history: list[dict]
     validation_history: list[dict]
     test_metrics: dict
+    best_epoch: int | None = None
+    best_validation_metrics: dict | None = None
+    best_checkpoint: str | None = None
+    stopped_epoch: int | None = None
 
 
 def weighted_source_pool(
@@ -86,9 +90,9 @@ def evaluate_selector(
     oracle_hits: list[float] = []
 
     for batch in episodes:
-        if selector == "ten":
+        if selector in {"ten", "target_only", "correlation", "uniform"} and model is not None:
             if model is None:
-                raise ValueError("TEN evaluation requires a model")
+                raise ValueError(f"{selector} evaluation requires a model")
             outputs = model(
                 batch.target_context,
                 batch.source_candidates,

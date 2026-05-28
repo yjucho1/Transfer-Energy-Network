@@ -1,12 +1,12 @@
-name = "etth2_patchtst_transferability"
+name = "etth1_patchtst_transferability"
 seed = 21
-selector = "correlation"
+selector = "target_only"
 output_dir = "results"
 
 [data]
 dataset_bundle = "./datasets"
-dataset_name = "etth2"
-file_name = "ETT-small/ETTh2.csv"
+dataset_name = "etth1"
+file_name = "ETT-small/ETTh1.csv"
 episode_mode = "real"
 task_name = "long_term_forecast"
 features = "M"
@@ -28,7 +28,7 @@ adaptation_n_layers = 1
 adaptation_d_ff = 32
 adaptation_dropout = 0.1
 adaptation_epochs = 2
-adaptation_lr = 0.0005
+adaptation_lr = 0.001
 train_ratio = 0.7
 val_ratio = 0.1
 test_ratio = 0.2
@@ -65,5 +65,7 @@ epochs = 50
 early_stopping_patience = 10
 early_stopping_min_delta = 0.0001
 forecast_loss_weight = 1.0
-transfer_loss_weight = 0.5
+transfer_loss_weight = 0.0
 target_temperature = 0.7
+ranking_margin = 0.2
+ranking_delta_threshold = 0.05

@@ -32,6 +32,19 @@ def _repeat_last_forecast(history: torch.Tensor, pred_len: int) -> torch.Tensor:
     return history[-1:].expand(pred_len)
 
 
+def _gaussian_crps_from_stats(
+    target: torch.Tensor,
+    mean: torch.Tensor,
+    scale: torch.Tensor,
+) -> torch.Tensor:
+    scale = scale.clamp_min(1e-6)
+    z = (target - mean) / scale
+    pdf = torch.exp(-0.5 * z.pow(2)) / torch.sqrt(torch.tensor(2.0 * torch.pi, dtype=target.dtype))
+    cdf = 0.5 * (1.0 + torch.erf(z / torch.sqrt(torch.tensor(2.0, dtype=target.dtype))))
+    crps = scale * (z * (2.0 * cdf - 1.0) + 2.0 * pdf - 1.0 / torch.sqrt(torch.tensor(torch.pi, dtype=target.dtype)))
+    return crps.mean()
+
+
 def _fit_ridge_regression(
     features: torch.Tensor,
     targets: torch.Tensor,
@@ -80,7 +93,7 @@ def _adaptation_validation_mse(
     target_history: torch.Tensor,
     source_history: torch.Tensor | None,
     config: DataConfig,
-) -> float:
+) -> tuple[float, float]:
     lag = min(config.adaptation_lag, max(1, target_history.shape[0] // 3))
     features, targets = _build_adaptation_design(
         target_history=target_history,
@@ -90,7 +103,10 @@ def _adaptation_validation_mse(
 
     if features.shape[0] < config.adaptation_min_samples:
         prediction = _repeat_last_forecast(target_history, targets.shape[0])
-        return float(torch.mean((targets - prediction).pow(2)).item())
+        residual_scale = (targets - prediction).std().clamp_min(1e-3)
+        mse = torch.mean((targets - prediction).pow(2))
+        crps = _gaussian_crps_from_stats(targets, prediction, torch.full_like(prediction, residual_scale))
+        return float(mse.item()), float(crps.item())
 
     val_size = max(1, int(features.shape[0] * config.adaptation_val_ratio))
     train_size = features.shape[0] - val_size
@@ -108,8 +124,12 @@ def _adaptation_validation_mse(
         targets=train_y,
         ridge=config.adaptation_ridge,
     )
+    train_predictions = _predict_ridge(train_x, weights)
+    train_scale = (train_y - train_predictions).std().clamp_min(1e-3)
     predictions = _predict_ridge(val_x, weights)
-    return float(torch.mean((val_y - predictions).pow(2)).item())
+    mse = torch.mean((val_y - predictions).pow(2))
+    crps = _gaussian_crps_from_stats(val_y, predictions, torch.full_like(predictions, train_scale))
+    return float(mse.item()), float(crps.item())
 
 
 def _build_patchtst_examples(
@@ -167,7 +187,7 @@ def _patchtst_validation_mse_per_row(
     target_histories: list[torch.Tensor],
     source_histories: list[torch.Tensor] | None,
     config: DataConfig,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor]:
     context_length = min(config.adaptation_lag, max(4, target_histories[0].shape[0] // 2))
 
     train_features: list[torch.Tensor] = []
@@ -222,10 +242,24 @@ def _patchtst_validation_mse_per_row(
         predictions = model(val_x)
         squared_error = (val_y - predictions).pow(2)
 
+    with torch.no_grad():
+        train_predictions = model(train_x)
+        train_scale = (train_y - train_predictions).std().clamp_min(1e-3)
+
     per_row_mse: list[torch.Tensor] = []
+    per_row_crps: list[torch.Tensor] = []
     for start, end in row_slices:
+        row_targets = val_y[start:end]
+        row_predictions = predictions[start:end]
         per_row_mse.append(squared_error[start:end].mean())
-    return torch.stack(per_row_mse)
+        per_row_crps.append(
+            _gaussian_crps_from_stats(
+                row_targets,
+                row_predictions,
+                torch.full_like(row_predictions, train_scale),
+            )
+        )
+    return torch.stack(per_row_mse), torch.stack(per_row_crps)
 
 
 def _compute_batch_validation_deltas(
@@ -234,7 +268,7 @@ def _compute_batch_validation_deltas(
     config: DataConfig,
 ) -> torch.Tensor:
     if config.adaptation_backbone == "patchtst":
-        baseline_mse = _patchtst_validation_mse_per_row(
+        baseline_mse, baseline_crps = _patchtst_validation_mse_per_row(
             target_histories=target_histories,
             source_histories=None,
             config=config,
@@ -244,7 +278,7 @@ def _compute_batch_validation_deltas(
 
         for source_slot in range(num_sources):
             source_histories = [row_sources[source_slot] for row_sources in source_histories_by_row]
-            source_mse = _patchtst_validation_mse_per_row(
+            source_mse, source_crps = _patchtst_validation_mse_per_row(
                 target_histories=target_histories,
                 source_histories=source_histories,
                 config=config,
@@ -256,7 +290,10 @@ def _compute_batch_validation_deltas(
                 ],
                 dtype=baseline_mse.dtype,
             )
-            per_source_deltas.append(baseline_mse - source_mse + 0.02 * history_corr)
+            alpha = config.adaptation_delta_alpha
+            mse_gain = baseline_mse - source_mse
+            crps_gain = baseline_crps - source_crps
+            per_source_deltas.append(alpha * mse_gain + (1.0 - alpha) * crps_gain + 0.02 * history_corr)
         return torch.stack(per_source_deltas, dim=1)
 
     delta_rows: list[torch.Tensor] = []
@@ -288,26 +325,41 @@ def _source_validation_delta(
     A tiny future-alignment bonus is kept only as a tie-breaker.
     """
     del future_target
-    baseline_mse = _adaptation_validation_mse(
+    baseline_mse, baseline_crps = _adaptation_validation_mse(
         target_history=target_history,
         source_history=None,
         config=config,
     )
-    source_mse = _adaptation_validation_mse(
+    source_mse, source_crps = _adaptation_validation_mse(
         target_history=target_history,
         source_history=source_history,
         config=config,
     )
-    improvement = baseline_mse - source_mse
+    improvement = (
+        config.adaptation_delta_alpha * (baseline_mse - source_mse)
+        + (1.0 - config.adaptation_delta_alpha) * (baseline_crps - source_crps)
+    )
 
     history_corr = abs(_safe_corr(source_history, target_history))
     return float(improvement + 0.02 * history_corr)
 
 
-def load_ltsf_series(config: DataConfig) -> LoadedSeries:
+def load_ltsf_series(
+    config: DataConfig,
+    dataset_name: str | None = None,
+    file_name: str | None = None,
+    target: str | None = None,
+) -> LoadedSeries:
     """Load a ProbTS-prepared LTSF CSV file into a tensor."""
-    profile = get_dataset_profile(config.dataset_name)
-    csv_path = Path(config.dataset_bundle) / profile.file_name
+    resolved_dataset_name = dataset_name or config.dataset_name
+    profile = get_dataset_profile(resolved_dataset_name)
+    resolved_file_name = file_name
+    if resolved_file_name is None:
+        if resolved_dataset_name == config.dataset_name:
+            resolved_file_name = config.file_name
+        else:
+            resolved_file_name = profile.file_name
+    csv_path = Path(config.dataset_bundle) / resolved_file_name
     if not csv_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {csv_path}")
 
@@ -322,8 +374,9 @@ def load_ltsf_series(config: DataConfig) -> LoadedSeries:
             rows.append([float(value) for value in row[1:]])
 
     values = torch.tensor(rows, dtype=torch.float32)
-    if config.target in feature_columns:
-        target_index = feature_columns.index(config.target)
+    resolved_target = target or config.target
+    if resolved_target in feature_columns:
+        target_index = feature_columns.index(resolved_target)
     else:
         target_index = len(feature_columns) - 1
 
@@ -351,20 +404,68 @@ def _normalize_with_train_stats(values: torch.Tensor, train_end: int) -> torch.T
     return (values - mean) / std
 
 
+def _map_cross_dataset_start(
+    target_start: int,
+    target_split_start: int,
+    target_last_start: int,
+    source_split_start: int,
+    source_last_start: int,
+) -> int:
+    if source_last_start <= source_split_start:
+        return source_split_start
+    if target_last_start <= target_split_start:
+        return source_split_start
+    progress = (target_start - target_split_start) / max(1, target_last_start - target_split_start)
+    mapped = source_split_start + progress * (source_last_start - source_split_start)
+    return int(round(max(source_split_start, min(source_last_start, mapped))))
+
+
+def _load_source_pool(
+    split: str,
+    config: DataConfig,
+) -> list[tuple[str, torch.Tensor, int, str, tuple[int, int]]]:
+    source_pool: list[tuple[str, torch.Tensor, int, str, tuple[int, int]]] = []
+    for source_dataset_name in config.source_pool_datasets:
+        loaded = load_ltsf_series(
+            config,
+            dataset_name=source_dataset_name,
+            target=config.target,
+        )
+        source_boundaries = _split_boundaries(len(loaded.values), config)
+        source_train_end = source_boundaries["train"][1]
+        normalized_values = _normalize_with_train_stats(loaded.values, source_train_end)
+        for column_index, column_name in enumerate(loaded.columns):
+            source_pool.append(
+                (
+                    source_dataset_name,
+                    normalized_values,
+                    column_index,
+                    column_name,
+                    source_boundaries[split],
+                )
+            )
+    return source_pool
+
+
 def _build_window_batch(
     normalized_values: torch.Tensor,
     target_index: int,
     config: DataConfig,
     start_indices: list[int],
+    split_start: int,
+    split_end: int,
+    source_pool: list[tuple[str, torch.Tensor, int, str, tuple[int, int]]] | None = None,
 ) -> EpisodeBatch:
     target_contexts: list[torch.Tensor] = []
     source_candidates_list: list[torch.Tensor] = []
     forecast_targets: list[torch.Tensor] = []
     target_histories: list[torch.Tensor] = []
     row_source_histories: list[list[torch.Tensor]] = []
+    row_source_labels: list[list[str]] = []
 
     feature_indices = list(range(normalized_values.shape[1]))
     source_feature_indices = [index for index in feature_indices if index != target_index]
+    target_last_start = split_end - config.seq_len - config.pred_len
 
     for start in start_indices:
         context_end = start + config.seq_len
@@ -376,28 +477,53 @@ def _build_window_batch(
         target_history = context[:, target_index]
         target_histories.append(target_history)
 
-        scored_sources: list[tuple[float, int]] = []
-        for source_index in source_feature_indices:
-            source_history = context[:, source_index]
-            similarity = abs(_safe_corr(source_history, target_history))
-            scored_sources.append((similarity, source_index))
-
-        scored_sources.sort(key=lambda item: item[0], reverse=True)
-        chosen_sources = [source_index for _, source_index in scored_sources[: config.num_sources]]
-
         source_candidates: list[torch.Tensor] = []
         current_row_sources: list[torch.Tensor] = []
+        current_row_labels: list[str] = []
 
-        for source_index in chosen_sources:
-            source_history = context[:, source_index]
-            source_candidates.append(source_history)
-            current_row_sources.append(source_history)
+        if source_pool:
+            scored_pool: list[tuple[float, torch.Tensor, str]] = []
+            for source_name, source_values, source_feature_index, column_name, (source_split_start, source_split_end) in source_pool:
+                source_last_start = source_split_end - config.seq_len
+                source_start = _map_cross_dataset_start(
+                    target_start=start,
+                    target_split_start=split_start,
+                    target_last_start=target_last_start,
+                    source_split_start=source_split_start,
+                    source_last_start=source_last_start,
+                )
+                source_context_end = source_start + config.seq_len
+                source_history = source_values[source_start:source_context_end, source_feature_index]
+                similarity = abs(_safe_corr(source_history, target_history))
+                scored_pool.append((similarity, source_history, f"{source_name}:{column_name}"))
+
+            scored_pool.sort(key=lambda item: item[0], reverse=True)
+            for _, source_history, source_label in scored_pool[: config.num_sources]:
+                source_candidates.append(source_history)
+                current_row_sources.append(source_history)
+                current_row_labels.append(source_label)
+        else:
+            scored_sources: list[tuple[float, int]] = []
+            for source_index in source_feature_indices:
+                source_history = context[:, source_index]
+                similarity = abs(_safe_corr(source_history, target_history))
+                scored_sources.append((similarity, source_index))
+
+            scored_sources.sort(key=lambda item: item[0], reverse=True)
+            chosen_sources = [source_index for _, source_index in scored_sources[: config.num_sources]]
+
+            for source_index in chosen_sources:
+                source_history = context[:, source_index]
+                source_candidates.append(source_history)
+                current_row_sources.append(source_history)
+                current_row_labels.append(f"{config.dataset_name}:{source_index}")
 
         source_candidate_tensor = torch.stack(source_candidates, dim=0)
         target_contexts.append(target_context)
         source_candidates_list.append(source_candidate_tensor)
         forecast_targets.append(future_target)
         row_source_histories.append(current_row_sources)
+        row_source_labels.append(current_row_labels)
 
     validation_delta_tensor = _compute_batch_validation_deltas(
         target_histories=target_histories,
@@ -412,6 +538,8 @@ def _build_window_batch(
         forecast_target=torch.stack(forecast_targets, dim=0),
         validation_delta=validation_delta_tensor,
         oracle_index=oracle_indices.to(dtype=torch.long),
+        source_labels=row_source_labels,
+        metadata={"split_start": split_start, "split_end": split_end},
     )
 
 
@@ -431,6 +559,8 @@ def generate_ltsf_episode_split(split: str, config: DataConfig) -> list[EpisodeB
     if config.max_windows_per_split > 0:
         start_indices = start_indices[: config.max_windows_per_split]
 
+    source_pool = _load_source_pool(split, config) if config.source_pool_datasets else None
+
     batches: list[EpisodeBatch] = []
     for offset in range(0, len(start_indices), config.batch_size):
         batch_indices = start_indices[offset : offset + config.batch_size]
@@ -442,6 +572,9 @@ def generate_ltsf_episode_split(split: str, config: DataConfig) -> list[EpisodeB
                 target_index=loaded.target_index,
                 config=config,
                 start_indices=batch_indices,
+                split_start=split_start,
+                split_end=split_end,
+                source_pool=source_pool,
             )
         )
     return batches

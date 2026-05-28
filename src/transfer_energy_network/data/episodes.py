@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -17,6 +18,8 @@ class EpisodeBatch:
     forecast_target: torch.Tensor
     validation_delta: torch.Tensor
     oracle_index: torch.Tensor
+    source_labels: list[list[str]] | None = None
+    metadata: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, torch.Tensor]:
         return {

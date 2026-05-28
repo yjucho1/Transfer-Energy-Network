@@ -16,6 +16,7 @@ class DataConfig:
     dataset_bundle: str = "./datasets"
     dataset_name: str = "etth1"
     file_name: str = "ETT-small/ETTh1.csv"
+    source_pool_datasets: list[str] = field(default_factory=list)
     episode_mode: str = "real"
     task_name: str = "long_term_forecast"
     features: str = "M"
@@ -29,6 +30,7 @@ class DataConfig:
     adaptation_ridge: float = 1e-2
     adaptation_val_ratio: float = 0.25
     adaptation_min_samples: int = 8
+    adaptation_delta_alpha: float = 0.5
     adaptation_patch_len: int = 8
     adaptation_patch_stride: int = 4
     adaptation_d_model: int = 16
@@ -62,6 +64,7 @@ class DataConfig:
 class ModelConfig:
     hidden_dim: int = 24
     energy_temperature: float = 0.7
+    energy_top_k: int = 2
     forecast_backbone: str = "patchtst"
     forecast_patch_len: int = 8
     forecast_patch_stride: int = 4

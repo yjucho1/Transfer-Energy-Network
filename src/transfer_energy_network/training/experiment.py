@@ -43,6 +43,7 @@ def build_model(
         forecast_n_layers=config.model.forecast_n_layers,
         forecast_d_ff=config.model.forecast_d_ff,
         forecast_dropout=config.model.forecast_dropout,
+        energy_top_k=config.model.energy_top_k,
     )
 
 

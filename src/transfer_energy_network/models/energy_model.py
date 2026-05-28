@@ -31,9 +31,11 @@ class TransferEnergyNetwork(nn.Module):
         forecast_n_layers: int = 2,
         forecast_d_ff: int = 64,
         forecast_dropout: float = 0.1,
+        energy_top_k: int = 0,
     ) -> None:
         super().__init__()
         self.seq_len = max(1, seq_len)
+        self.energy_top_k = energy_top_k
         self.target_channels = max(1, target_dim // self.seq_len) if target_dim % self.seq_len == 0 else 1
         self.use_patchtst_forecaster = (
             forecast_backbone == "patchtst"
@@ -98,7 +100,11 @@ class TransferEnergyNetwork(nn.Module):
         source_repr: torch.Tensor,
         temperature: float = 1.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        weights = energy_to_weights(energies, temperature=temperature)
+        weights = energy_to_weights(
+            energies,
+            temperature=temperature,
+            top_k=self.energy_top_k,
+        )
         pooled_sources = torch.sum(weights.unsqueeze(-1) * source_repr, dim=1)
         return pooled_sources, weights
 

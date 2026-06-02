@@ -21,7 +21,7 @@ adaptation_lag = 24
 adaptation_ridge = 0.01
 adaptation_val_ratio = 0.25
 adaptation_min_samples = 8
-adaptation_delta_alpha = 0.5
+adaptation_delta_alpha = 0.0
 adaptation_patch_len = 8
 adaptation_patch_stride = 4
 adaptation_d_model = 16
@@ -53,6 +53,7 @@ noise_scale = 0.1
 [model]
 hidden_dim = 24
 energy_temperature = 0.7
+energy_top_k = 0
 forecast_backbone = "patchtst"
 forecast_patch_len = 8
 forecast_patch_stride = 4
@@ -63,9 +64,13 @@ forecast_dropout = 0.1
 
 [optim]
 lr = 0.001
+lr_loss = 0.0001
 epochs = 20
 early_stopping_patience = 5
 early_stopping_min_delta = 0.0001
 forecast_loss_weight = 1.0
+forecast_loss_type = "crps"
 transfer_loss_weight = 0.5
 target_temperature = 0.7
+energy_margin = 0.2
+trajectory_energy_weight = 0.001

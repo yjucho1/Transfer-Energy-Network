@@ -64,7 +64,7 @@ class DataConfig:
 class ModelConfig:
     hidden_dim: int = 24
     energy_temperature: float = 0.7
-    energy_top_k: int = 2
+    energy_top_k: int = 0
     forecast_backbone: str = "patchtst"
     forecast_patch_len: int = 8
     forecast_patch_stride: int = 4
@@ -77,14 +77,19 @@ class ModelConfig:
 @dataclass
 class OptimConfig:
     lr: float = 1e-3
+    lr_loss: float = 1e-4
     epochs: int = 5
     early_stopping_patience: int = 5
     early_stopping_min_delta: float = 1e-4
     forecast_loss_weight: float = 1.0
+    forecast_loss_type: str = "crps"
     transfer_loss_weight: float = 0.5
     target_temperature: float = 0.7
     ranking_margin: float = 0.2
     ranking_delta_threshold: float = 0.05
+    usage_energy_weight: float = 0.1
+    energy_margin: float = 0.2
+    trajectory_energy_weight: float = 0.1
 
 
 @dataclass

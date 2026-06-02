@@ -1,0 +1,72 @@
+name = "ettm2_patchtst_transferability"
+seed = 21
+selector = "target_only"
+output_dir = "results"
+
+[data]
+dataset_bundle = "./datasets"
+dataset_name = "ettm2"
+file_name = "ETT-small/ETTm2.csv"
+episode_mode = "real"
+task_name = "long_term_forecast"
+features = "M"
+target = "OT"
+freq = "15min"
+seq_len = 96
+label_len = 48
+pred_len = 96
+adaptation_backbone = "patchtst"
+adaptation_lag = 24
+adaptation_ridge = 0.01
+adaptation_val_ratio = 0.25
+adaptation_min_samples = 8
+adaptation_patch_len = 8
+adaptation_patch_stride = 4
+adaptation_d_model = 16
+adaptation_n_heads = 2
+adaptation_n_layers = 1
+adaptation_d_ff = 32
+adaptation_dropout = 0.1
+adaptation_epochs = 2
+adaptation_lr = 0.001
+train_ratio = 0.7
+val_ratio = 0.1
+test_ratio = 0.2
+window_stride = 8
+max_windows_per_split = 256
+train_episodes = 100
+val_episodes = 30
+test_episodes = 30
+batch_size = 16
+num_sources = 21
+target_dim = 10
+source_dim = 10
+horizon = 4
+helpful_delta = 1.5
+harmful_delta = -0.5
+source_signal_scale = 0.4
+target_signal_scale = 0.6
+noise_scale = 0.1
+
+[model]
+hidden_dim = 24
+energy_temperature = 0.7
+forecast_backbone = "patchtst"
+forecast_patch_len = 8
+forecast_patch_stride = 4
+forecast_n_heads = 2
+forecast_n_layers = 2
+forecast_d_ff = 64
+forecast_dropout = 0.1
+
+[optim]
+lr = 0.001
+epochs = 20
+early_stopping_patience = 5
+early_stopping_min_delta = 0.0001
+forecast_loss_weight = 1.0
+forecast_loss_type = "crps"
+transfer_loss_weight = 0.0
+target_temperature = 0.7
+ranking_margin = 0.2
+ranking_delta_threshold = 0.05

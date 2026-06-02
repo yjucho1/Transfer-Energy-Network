@@ -1,0 +1,13 @@
+{
+  "dataset": "etth2",
+  "mean_energy_gap": 0.004906919784843922,
+  "median_energy_gap": 0.004368484020233154,
+  "separation_success_rate": 0.5625,
+  "margin_satisfaction_rate": 0.0,
+  "energy_gap_std": 0.02360164187848568,
+  "energy_gap_mse_corr": 0.1741428672167873,
+  "energy_gap_crps_corr": 0.1714843065370412,
+  "mean_sample_mse": 0.3648775815963745,
+  "mean_sample_crps": 0.3456694781780243,
+  "num_test_samples": 256
+}

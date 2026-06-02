@@ -1,0 +1,13 @@
+{
+  "dataset": "ettm1",
+  "mean_energy_gap": -0.0005207351641729474,
+  "median_energy_gap": -0.0004126429557800293,
+  "separation_success_rate": 0.484375,
+  "margin_satisfaction_rate": 0.140625,
+  "energy_gap_std": 0.009632403030991554,
+  "energy_gap_mse_corr": -0.23866126039536079,
+  "energy_gap_crps_corr": -0.1729188022198614,
+  "mean_sample_mse": 0.041622113436460495,
+  "mean_sample_crps": 0.13065539300441742,
+  "num_test_samples": 256
+}

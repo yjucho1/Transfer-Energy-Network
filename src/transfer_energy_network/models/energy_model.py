@@ -57,6 +57,16 @@ class TransferEnergyNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
+        self.future_encoder = nn.Sequential(
+            nn.Linear(horizon, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.trajectory_energy_mlp = nn.Sequential(
+            nn.Linear(hidden_dim * 5, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
         if self.use_patchtst_forecaster:
             self.forecast_head = PatchTSTGaussianForecaster(
                 input_channels=self.target_channels + 1,
@@ -108,11 +118,33 @@ class TransferEnergyNetwork(nn.Module):
         pooled_sources = torch.sum(weights.unsqueeze(-1) * source_repr, dim=1)
         return pooled_sources, weights
 
+    def score_future_energy(
+        self,
+        target_repr: torch.Tensor,
+        pooled_sources: torch.Tensor,
+        future_trajectory: torch.Tensor,
+    ) -> torch.Tensor:
+        future_repr = self.future_encoder(future_trajectory)
+        target_future_interaction = target_repr * future_repr
+        source_future_interaction = pooled_sources * future_repr
+        energy_inputs = torch.cat(
+            [
+                target_repr,
+                pooled_sources,
+                future_repr,
+                target_future_interaction,
+                source_future_interaction,
+            ],
+            dim=-1,
+        )
+        return self.trajectory_energy_mlp(energy_inputs).squeeze(-1)
+
     def forward(
         self,
         target_context: torch.Tensor,
         source_candidates: torch.Tensor,
         temperature: float = 1.0,
+        forecast_target: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         target_repr = self.encode_target(target_context)
         energies, source_repr = self.score_sources(target_context, source_candidates)
@@ -123,15 +155,25 @@ class TransferEnergyNetwork(nn.Module):
         )
         if self.use_patchtst_forecaster:
             target_sequence = target_context.view(target_context.shape[0], self.seq_len, self.target_channels)
-            pooled_source_sequence = torch.sum(weights.unsqueeze(-1) * source_candidates, dim=1).unsqueeze(-1)
+            pooled_source_sequence = torch.sum(
+                weights.unsqueeze(-1) * source_candidates,
+                dim=1,
+            ).unsqueeze(-1)
             forecast_input = torch.cat([target_sequence, pooled_source_sequence], dim=-1)
             mean, scale = self.forecast_head(forecast_input)
         else:
             forecast_features = torch.cat([target_repr, pooled_sources], dim=-1)
             mean, scale = self.forecast_head(forecast_features)
+        trajectory_energy_pred = self.score_future_energy(target_repr, pooled_sources, mean)
+        if forecast_target is None:
+            trajectory_energy_gt = None
+        else:
+            trajectory_energy_gt = self.score_future_energy(target_repr, pooled_sources, forecast_target)
         return {
             "energies": energies,
             "weights": weights,
             "mean": mean,
             "scale": scale,
+            "trajectory_energy_pred": trajectory_energy_pred,
+            "trajectory_energy_gt": trajectory_energy_gt,
         }

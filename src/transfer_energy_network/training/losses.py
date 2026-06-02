@@ -59,6 +59,20 @@ def pinball_loss(
     return torch.maximum(quantile * error, (quantile - 1.0) * error).mean()
 
 
+def gaussian_mean_quantile_loss(
+    target: torch.Tensor,
+    mean: torch.Tensor,
+    scale: torch.Tensor,
+    quantiles: tuple[float, ...] = (0.1, 0.5, 0.9),
+) -> torch.Tensor:
+    """Average pinball loss over analytic Gaussian quantiles."""
+    losses = []
+    for quantile in quantiles:
+        prediction = gaussian_quantile(mean, scale, quantile)
+        losses.append(pinball_loss(target, prediction, quantile))
+    return torch.stack(losses).mean()
+
+
 def transferability_loss(
     energies: torch.Tensor,
     validation_delta: torch.Tensor,
@@ -85,3 +99,14 @@ def transferability_loss(
 
     loss = masked_pair_losses.sum() / valid_pair_count
     return loss, pair_mask.float()
+
+
+def trajectory_energy_loss(
+    energy_gt: torch.Tensor,
+    energy_pred: torch.Tensor,
+    margin: float = 0.2,
+) -> torch.Tensor:
+    """Encourage the ground-truth future to have lower energy than the current forecast."""
+    if margin < 0:
+        raise ValueError("margin must be non-negative")
+    return torch.relu(energy_gt - energy_pred + margin).mean()

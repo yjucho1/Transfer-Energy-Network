@@ -15,8 +15,7 @@ from ..models.baselines import FixedWeightPatchTSTModel, correlation_weights, un
 from ..models.energy_model import TransferEnergyNetwork
 from ..models.target_only import TargetOnlyPatchTSTModel
 from .evaluation import ExperimentSummary, evaluate_selector, save_experiment_summary
-from .losses import gaussian_nll
-from .trainer import TrainingConfig, train_step
+from .trainer import TrainingConfig, compute_forecast_loss, train_step
 
 
 def set_seed(seed: int) -> None:
@@ -125,14 +124,22 @@ def train_ten_model(
         source_dim=sample_batch.source_candidates.shape[-1],
         horizon=sample_batch.forecast_target.shape[-1],
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.optim.lr)
+    task_parameters = (
+        list(model.target_encoder.parameters())
+        + list(model.source_encoder.parameters())
+        + list(model.energy_mlp.parameters())
+        + list(model.forecast_head.parameters())
+    )
+    optimizer_task = torch.optim.Adam(task_parameters, lr=config.optim.lr)
+    loss_parameters = list(model.future_encoder.parameters()) + list(model.trajectory_energy_mlp.parameters())
+    optimizer_loss = torch.optim.Adam(loss_parameters, lr=config.optim.lr_loss)
     train_config = TrainingConfig(
         forecast_loss_weight=config.optim.forecast_loss_weight,
-        transfer_loss_weight=config.optim.transfer_loss_weight,
+        forecast_loss_type=config.optim.forecast_loss_type,
         energy_temperature=config.model.energy_temperature,
         target_temperature=config.optim.target_temperature,
-        ranking_margin=config.optim.ranking_margin,
-        ranking_delta_threshold=config.optim.ranking_delta_threshold,
+        energy_margin=config.optim.energy_margin,
+        trajectory_energy_weight=config.optim.trajectory_energy_weight,
     )
 
     train_history: list[dict] = []
@@ -149,20 +156,23 @@ def train_ten_model(
     for epoch in range(1, config.optim.epochs + 1):
         epoch_losses: list[float] = []
         epoch_forecast: list[float] = []
-        epoch_transfer: list[float] = []
+        epoch_energy: list[float] = []
+        epoch_trajectory_energy: list[float] = []
 
         for batch in train_episodes:
-            metrics = train_step(model, optimizer, batch.as_dict(), train_config)
+            metrics = train_step(model, optimizer_task, optimizer_loss, batch.as_dict(), train_config)
             epoch_losses.append(float(metrics["loss"].item()))
             epoch_forecast.append(float(metrics["forecast_loss"].item()))
-            epoch_transfer.append(float(metrics["transfer_loss"].item()))
+            epoch_energy.append(float(metrics["energy_loss"].item()))
+            epoch_trajectory_energy.append(float(metrics["trajectory_energy_loss"].item()))
 
         train_history.append(
             {
                 "epoch": epoch,
                 "loss": sum(epoch_losses) / len(epoch_losses),
                 "forecast_loss": sum(epoch_forecast) / len(epoch_forecast),
-                "transfer_loss": sum(epoch_transfer) / len(epoch_transfer),
+                "energy_loss": sum(epoch_energy) / len(epoch_energy),
+                "trajectory_energy_loss": sum(epoch_trajectory_energy) / len(epoch_trajectory_energy),
             }
         )
 
@@ -286,10 +296,11 @@ def train_target_only_experiment(config: ExperimentConfig) -> ExperimentSummary:
             model.train()
             optimizer.zero_grad()
             outputs = model(batch.target_context, batch.source_candidates)
-            forecast_loss = gaussian_nll(
+            forecast_loss = compute_forecast_loss(
                 target=batch.forecast_target,
                 mean=outputs["mean"],
                 scale=outputs["scale"],
+                loss_type=config.optim.forecast_loss_type,
             )
             forecast_loss.backward()
             optimizer.step()
@@ -384,10 +395,11 @@ def train_fixed_weight_experiment(config: ExperimentConfig) -> ExperimentSummary
                 batch.source_candidates,
                 temperature=config.model.energy_temperature,
             )
-            forecast_loss = gaussian_nll(
+            forecast_loss = compute_forecast_loss(
                 target=batch.forecast_target,
                 mean=outputs["mean"],
                 scale=outputs["scale"],
+                loss_type=config.optim.forecast_loss_type,
             )
             forecast_loss.backward()
             optimizer.step()

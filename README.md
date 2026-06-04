@@ -12,6 +12,7 @@ The current codebase focuses on:
 - independent per-variable forecasting episodes
 - source-conditioned residual correction on top of a frozen target-only base model
 - structural energy learning over forecast corrections
+- inspired by SEAL-Pose, learning an energy function that encourages more plausible source-conditioned forecast corrections rather than focusing only on explicit source ranking
 
 The current question is:
 

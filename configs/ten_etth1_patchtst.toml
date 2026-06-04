@@ -36,7 +36,7 @@ noise_scale = 0.1
 
 [model]
 hidden_dim = 24
-source_pooling = "average"
+source_pooling = "energy"
 energy_temperature = 2.0
 energy_top_k = 0
 energy_logit_clip = 5.0

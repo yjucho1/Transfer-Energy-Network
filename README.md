@@ -257,7 +257,7 @@ The table below corresponds to the current **metric-guided energy** setup:
 - source residual correction
 - correction energy trained with metric-guided NCE
 - task-side Monte Carlo energy regularization
-- average source pooling for TEN
+- energy-based source pooling for TEN
 - fair frozen-base comparison against target-only, correlation, and uniform
 
 | Method | MSE | MAE | CRPS | Mean Q |
@@ -298,6 +298,11 @@ The current working conclusion is:
 
 In ETTh1 all-variables independent forecasting, source-conditioned correction has very limited headroom, so increasingly sophisticated energy objectives do not translate into clear forecasting gains.
 
+More concretely:
+
+- the energy network does learn to distinguish residual forecasting corrections under both the plausibility-oriented and metric-guided formulations
+- however, improved correction-energy scores do not translate into better final forecasting metrics in ETTh1, and the learned source-conditioned correction branch is typically neutral or slightly noisy relative to simpler baselines
+
 ## Diagnostics
 
 The most useful current diagnostics are structural-energy diagnostics rather than source-ranking diagnostics.
@@ -327,6 +332,7 @@ This is the clearest difference between the two energy formulations:
 
 - plausibility-oriented energy can show that source information makes corrections look more reasonable
 - metric-guided energy asks whether those corrections actually improve CRPS or MSE
+- in practice on ETTh1, both formulations learn a correction discriminator, but neither turns that signal into a meaningful forecasting gain
 
 In the current ETTh1 setting, both views suggest that source usefulness exists, but its headroom is small and difficult for TEN to exploit better than simple correlation-based weighting.
 

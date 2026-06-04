@@ -3,7 +3,7 @@
 from .config import ExperimentConfig, load_experiment_config
 from .data import DatasetProfile, get_dataset_profile
 from .models import GaussianForecastHead, TransferEnergyNetwork, energy_to_weights
-from .training import TrainingConfig, gaussian_nll, run_experiment, train_step, transferability_loss
+from .training import TrainingConfig, gaussian_nll, run_experiment, train_step
 
 __all__ = [
     "ExperimentConfig",
@@ -17,5 +17,4 @@ __all__ = [
     "load_experiment_config",
     "run_experiment",
     "train_step",
-    "transferability_loss",
 ]

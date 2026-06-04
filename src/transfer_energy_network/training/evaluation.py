@@ -10,7 +10,7 @@ import torch
 
 from ..config import ExperimentConfig
 from ..data import EpisodeBatch
-from ..models.baselines import correlation_weights, oracle_weights, uniform_weights
+from ..models.baselines import correlation_weights, uniform_weights
 from .losses import gaussian_crps, gaussian_quantile, pinball_loss
 
 
@@ -23,8 +23,6 @@ class EpochMetrics:
     forecast_q50_loss: float
     forecast_q90_loss: float
     forecast_mean_quantile_loss: float
-    top1_alignment: float
-    oracle_hit_rate: float
 
 
 @dataclass
@@ -86,9 +84,6 @@ def evaluate_selector(
     q50_losses: list[float] = []
     q90_losses: list[float] = []
     mean_q_losses: list[float] = []
-    alignments: list[float] = []
-    oracle_hits: list[float] = []
-
     for batch in episodes:
         if selector in {"ten", "target_only", "correlation", "uniform"} and model is not None:
             if model is None:
@@ -98,8 +93,6 @@ def evaluate_selector(
                 batch.source_candidates,
                 temperature=config.model.energy_temperature,
             )
-            weights = outputs["weights"].detach()
-            top1 = weights.argmax(dim=-1)
             median = outputs["mean"].detach()
             scale = outputs["scale"].detach()
         elif selector == "correlation":
@@ -108,19 +101,12 @@ def evaluate_selector(
                 batch.source_candidates,
                 temperature=config.model.energy_temperature,
             )
-            top1 = weights.argmax(dim=-1)
             median, scale = build_forecast_from_weights(batch, weights, config)
         elif selector == "uniform":
             weights = uniform_weights(batch.target_context, batch.source_candidates)
-            top1 = weights.argmax(dim=-1)
-            median, scale = build_forecast_from_weights(batch, weights, config)
-        elif selector == "oracle":
-            weights = oracle_weights(batch.validation_delta)
-            top1 = weights.argmax(dim=-1)
             median, scale = build_forecast_from_weights(batch, weights, config)
         else:
             raise ValueError(f"Unknown selector: {selector}")
-        oracle_top1 = batch.validation_delta.argmax(dim=-1)
         mse, mae = compute_point_metrics(batch.forecast_target, median)
         crps = gaussian_crps(batch.forecast_target, median, scale)
         q10 = gaussian_quantile(median, scale, 0.1)
@@ -138,8 +124,6 @@ def evaluate_selector(
         q50_losses.append(float(q50_loss.item()))
         q90_losses.append(float(q90_loss.item()))
         mean_q_losses.append(float(mean_q_loss.item()))
-        alignments.append(float((top1 == oracle_top1).float().mean().item()))
-        oracle_hits.append(float((top1 == batch.oracle_index).float().mean().item()))
 
     return EpochMetrics(
         forecast_mse=sum(mses) / len(mses),
@@ -149,8 +133,6 @@ def evaluate_selector(
         forecast_q50_loss=sum(q50_losses) / len(q50_losses),
         forecast_q90_loss=sum(q90_losses) / len(q90_losses),
         forecast_mean_quantile_loss=sum(mean_q_losses) / len(mean_q_losses),
-        top1_alignment=sum(alignments) / len(alignments),
-        oracle_hit_rate=sum(oracle_hits) / len(oracle_hits),
     )
 
 

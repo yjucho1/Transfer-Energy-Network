@@ -24,6 +24,7 @@ class TransferEnergyNetwork(nn.Module):
         hidden_dim: int,
         horizon: int,
         seq_len: int,
+        source_pooling: str = "energy",
         forecast_backbone: str = "patchtst",
         forecast_patch_len: int = 8,
         forecast_patch_stride: int = 4,
@@ -32,10 +33,15 @@ class TransferEnergyNetwork(nn.Module):
         forecast_d_ff: int = 64,
         forecast_dropout: float = 0.1,
         energy_top_k: int = 0,
+        energy_logit_clip: float = 0.0,
+        energy_center_logits: bool = True,
     ) -> None:
         super().__init__()
         self.seq_len = max(1, seq_len)
+        self.source_pooling = source_pooling
         self.energy_top_k = energy_top_k
+        self.energy_logit_clip = energy_logit_clip
+        self.energy_center_logits = energy_center_logits
         self.target_channels = max(1, target_dim // self.seq_len) if target_dim % self.seq_len == 0 else 1
         self.use_patchtst_forecaster = (
             forecast_backbone == "patchtst"
@@ -68,21 +74,45 @@ class TransferEnergyNetwork(nn.Module):
             nn.Linear(hidden_dim, 1),
         )
         if self.use_patchtst_forecaster:
-            self.forecast_head = PatchTSTGaussianForecaster(
-                input_channels=self.target_channels + 1,
-                context_length=self.seq_len,
-                horizon=horizon,
-                d_model=hidden_dim,
-                patch_len=forecast_patch_len,
-                stride=forecast_patch_stride,
-                n_heads=forecast_n_heads,
-                n_layers=forecast_n_layers,
-                d_ff=forecast_d_ff,
-                dropout=forecast_dropout,
-                target_channel_index=self.target_channels - 1,
+            self.forecast_head = nn.ModuleDict(
+                {
+                    "base": PatchTSTGaussianForecaster(
+                        input_channels=self.target_channels,
+                        context_length=self.seq_len,
+                        horizon=horizon,
+                        d_model=hidden_dim,
+                        patch_len=forecast_patch_len,
+                        stride=forecast_patch_stride,
+                        n_heads=forecast_n_heads,
+                        n_layers=forecast_n_layers,
+                        d_ff=forecast_d_ff,
+                        dropout=forecast_dropout,
+                        target_channel_index=self.target_channels - 1,
+                    ),
+                    "residual": PatchTSTGaussianForecaster(
+                        input_channels=self.target_channels + 1,
+                        context_length=self.seq_len,
+                        horizon=horizon,
+                        d_model=hidden_dim,
+                        patch_len=forecast_patch_len,
+                        stride=forecast_patch_stride,
+                        n_heads=forecast_n_heads,
+                        n_layers=forecast_n_layers,
+                        d_ff=forecast_d_ff,
+                        dropout=forecast_dropout,
+                        target_channel_index=self.target_channels - 1,
+                    ),
+                }
             )
+            self.source_residual_logit = nn.Parameter(torch.tensor(-4.0))
         else:
-            self.forecast_head = GaussianForecastHead(input_dim=hidden_dim * 2, horizon=horizon)
+            self.forecast_head = nn.ModuleDict(
+                {
+                    "base": GaussianForecastHead(input_dim=hidden_dim, horizon=horizon),
+                    "residual": GaussianForecastHead(input_dim=hidden_dim * 2, horizon=horizon),
+                }
+            )
+            self.source_residual_logit = nn.Parameter(torch.tensor(-4.0))
 
     def encode_target(self, target_context: torch.Tensor) -> torch.Tensor:
         return self.target_encoder(target_context)
@@ -110,28 +140,40 @@ class TransferEnergyNetwork(nn.Module):
         source_repr: torch.Tensor,
         temperature: float = 1.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.source_pooling == "average":
+            num_sources = source_repr.shape[1]
+            weights = torch.full(
+                (source_repr.shape[0], num_sources),
+                1.0 / num_sources,
+                dtype=source_repr.dtype,
+                device=source_repr.device,
+            )
+            pooled_sources = source_repr.mean(dim=1)
+            return pooled_sources, weights
         weights = energy_to_weights(
             energies,
             temperature=temperature,
             top_k=self.energy_top_k,
+            logit_clip=self.energy_logit_clip,
+            center_logits=self.energy_center_logits,
         )
         pooled_sources = torch.sum(weights.unsqueeze(-1) * source_repr, dim=1)
         return pooled_sources, weights
 
-    def score_future_energy(
+    def score_correction_energy(
         self,
         target_repr: torch.Tensor,
         pooled_sources: torch.Tensor,
-        future_trajectory: torch.Tensor,
+        correction: torch.Tensor,
     ) -> torch.Tensor:
-        future_repr = self.future_encoder(future_trajectory)
-        target_future_interaction = target_repr * future_repr
-        source_future_interaction = pooled_sources * future_repr
+        correction_repr = self.future_encoder(correction)
+        target_future_interaction = target_repr * correction_repr
+        source_future_interaction = pooled_sources * correction_repr
         energy_inputs = torch.cat(
             [
                 target_repr,
                 pooled_sources,
-                future_repr,
+                correction_repr,
                 target_future_interaction,
                 source_future_interaction,
             ],
@@ -147,7 +189,16 @@ class TransferEnergyNetwork(nn.Module):
         forecast_target: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         target_repr = self.encode_target(target_context)
-        energies, source_repr = self.score_sources(target_context, source_candidates)
+        if self.source_pooling == "average":
+            source_repr = self.encode_sources(source_candidates)
+            energies = torch.zeros(
+                source_candidates.shape[0],
+                source_candidates.shape[1],
+                dtype=source_candidates.dtype,
+                device=source_candidates.device,
+            )
+        else:
+            energies, source_repr = self.score_sources(target_context, source_candidates)
         pooled_sources, weights = self.aggregate_sources(
             energies=energies,
             source_repr=source_repr,
@@ -155,25 +206,56 @@ class TransferEnergyNetwork(nn.Module):
         )
         if self.use_patchtst_forecaster:
             target_sequence = target_context.view(target_context.shape[0], self.seq_len, self.target_channels)
-            pooled_source_sequence = torch.sum(
-                weights.unsqueeze(-1) * source_candidates,
-                dim=1,
-            ).unsqueeze(-1)
+            base_mean, base_scale = self.forecast_head["base"](target_sequence)
+            if self.source_pooling == "average":
+                pooled_source_sequence = source_candidates.mean(dim=1, keepdim=False).unsqueeze(-1)
+            else:
+                pooled_source_sequence = torch.sum(
+                    weights.unsqueeze(-1) * source_candidates,
+                    dim=1,
+                ).unsqueeze(-1)
             forecast_input = torch.cat([target_sequence, pooled_source_sequence], dim=-1)
-            mean, scale = self.forecast_head(forecast_input)
+            residual_mean, _ = self.forecast_head["residual"](forecast_input)
+            residual_gate = torch.sigmoid(self.source_residual_logit)
+            gated_residual = residual_gate * residual_mean
         else:
+            base_mean, base_scale = self.forecast_head["base"](target_repr)
             forecast_features = torch.cat([target_repr, pooled_sources], dim=-1)
-            mean, scale = self.forecast_head(forecast_features)
-        trajectory_energy_pred = self.score_future_energy(target_repr, pooled_sources, mean)
+            residual_mean, _ = self.forecast_head["residual"](forecast_features)
+            residual_gate = torch.sigmoid(self.source_residual_logit)
+            gated_residual = residual_gate * residual_mean
+        detached_base_mean = base_mean.detach()
+        detached_base_scale = base_scale.detach()
+        # Keep the base forecaster aligned purely with the base forecasting loss.
+        # Final forecast supervision and energy supervision only see detached
+        # base predictions plus the source-induced correction.
+        mean = detached_base_mean + gated_residual
+        scale = detached_base_scale
+        zero_correction = torch.zeros_like(base_mean)
+        correction_energy_base = self.score_correction_energy(
+            target_repr,
+            torch.zeros_like(pooled_sources),
+            zero_correction,
+        )
+        correction_energy_pred = self.score_correction_energy(target_repr, pooled_sources, gated_residual)
         if forecast_target is None:
-            trajectory_energy_gt = None
+            correction_energy_gt = None
         else:
-            trajectory_energy_gt = self.score_future_energy(target_repr, pooled_sources, forecast_target)
+            target_correction = forecast_target - detached_base_mean
+            correction_energy_gt = self.score_correction_energy(target_repr, pooled_sources, target_correction)
         return {
             "energies": energies,
             "weights": weights,
+            "target_repr": target_repr,
+            "pooled_sources": pooled_sources,
+            "base_mean": base_mean,
+            "base_scale": base_scale,
+            "residual_mean": gated_residual,
             "mean": mean,
             "scale": scale,
-            "trajectory_energy_pred": trajectory_energy_pred,
-            "trajectory_energy_gt": trajectory_energy_gt,
+            "correction_energy_base": correction_energy_base,
+            "source_residual_gate": torch.sigmoid(self.source_residual_logit).detach(),
+            "residual_norm": gated_residual.pow(2).mean(),
+            "correction_energy_pred": correction_energy_pred,
+            "correction_energy_gt": correction_energy_gt,
         }

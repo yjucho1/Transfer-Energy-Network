@@ -9,6 +9,8 @@ def energy_to_weights(
     energies: torch.Tensor,
     temperature: float = 1.0,
     top_k: int | None = None,
+    logit_clip: float = 0.0,
+    center_logits: bool = True,
 ) -> torch.Tensor:
     """Convert energies into normalized transfer weights.
 
@@ -17,6 +19,10 @@ def energy_to_weights(
     if temperature <= 0:
         raise ValueError("temperature must be positive")
     logits = -energies / temperature
+    if center_logits:
+        logits = logits - logits.mean(dim=-1, keepdim=True)
+    if logit_clip > 0:
+        logits = logits.clamp(min=-logit_clip, max=logit_clip)
     if top_k is None or top_k <= 0 or top_k >= logits.shape[-1]:
         return torch.softmax(logits, dim=-1)
 

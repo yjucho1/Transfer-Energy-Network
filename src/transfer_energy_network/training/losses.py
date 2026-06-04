@@ -73,40 +73,18 @@ def gaussian_mean_quantile_loss(
     return torch.stack(losses).mean()
 
 
-def transferability_loss(
-    energies: torch.Tensor,
-    validation_delta: torch.Tensor,
-    margin: float = 0.2,
-    delta_threshold: float = 0.05,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Rank low-energy sources ahead of less transferable ones with hinge loss."""
-    if margin < 0:
-        raise ValueError("margin must be non-negative")
-    if delta_threshold < 0:
-        raise ValueError("delta_threshold must be non-negative")
-
-    delta_diff = validation_delta.unsqueeze(-1) - validation_delta.unsqueeze(-2)
-    pair_mask = delta_diff > delta_threshold
-
-    energy_diff = energies.unsqueeze(-1) - energies.unsqueeze(-2)
-    pair_losses = torch.relu(energy_diff + margin)
-    masked_pair_losses = pair_losses * pair_mask.float()
-
-    valid_pair_count = pair_mask.float().sum()
-    if valid_pair_count.item() == 0:
-        zero = energies.new_zeros(())
-        return zero, pair_mask.float()
-
-    loss = masked_pair_losses.sum() / valid_pair_count
-    return loss, pair_mask.float()
-
-
-def trajectory_energy_loss(
-    energy_gt: torch.Tensor,
-    energy_pred: torch.Tensor,
-    margin: float = 0.2,
+def correction_energy_nce_loss(
+    positive_energy: torch.Tensor,
+    negative_energies: torch.Tensor,
+    temperature: float = 1.0,
 ) -> torch.Tensor:
-    """Encourage the ground-truth future to have lower energy than the current forecast."""
-    if margin < 0:
-        raise ValueError("margin must be non-negative")
-    return torch.relu(energy_gt - energy_pred + margin).mean()
+    """Contrastive NCE loss over correction energies.
+
+    Lower energy should be assigned to the positive correction than to all negatives.
+    """
+    if temperature <= 0:
+        raise ValueError("temperature must be positive")
+    positive_logits = -positive_energy / temperature
+    negative_logits = -negative_energies / temperature
+    all_logits = torch.cat([positive_logits.unsqueeze(-1), negative_logits], dim=-1)
+    return -(positive_logits - torch.logsumexp(all_logits, dim=-1)).mean()

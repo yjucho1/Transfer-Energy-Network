@@ -54,15 +54,15 @@ def collect_metric_values(dataset_key: str, horizon: int, method_key: str, metri
 
 def main() -> None:
     lines = [
-        "| Dataset | Horizon | Method | MSE | MAE | CRPS | Mean Q | Top-1 |",
-        "|---|---:|---|---:|---:|---:|---:|---:|",
+        "| Dataset | Horizon | Method | MSE | MAE | CRPS | Mean Q |",
+        "|---|---:|---|---:|---:|---:|---:|",
     ]
 
     for dataset, dataset_key in zip(DATASETS, DATASET_KEYS):
         for horizon in HORIZONS:
             for method_label, method_key in METHODS:
                 lines.append(
-                    "| {dataset} | {horizon} | {method} | {mse} | {mae} | {crps} | {mean_q} | {top1} |".format(
+                    "| {dataset} | {horizon} | {method} | {mse} | {mae} | {crps} | {mean_q} |".format(
                         dataset=dataset,
                         horizon=horizon,
                         method=method_label,
@@ -72,7 +72,6 @@ def main() -> None:
                         mean_q=summarize(
                             collect_metric_values(dataset_key, horizon, method_key, "forecast_mean_quantile_loss")
                         ),
-                        top1=summarize(collect_metric_values(dataset_key, horizon, method_key, "top1_alignment")),
                     )
                 )
 

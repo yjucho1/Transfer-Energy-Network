@@ -35,21 +35,12 @@ def uniform_weights(
         dtype=source_candidates.dtype,
         device=source_candidates.device,
     )
-
-
-def oracle_weights(validation_delta: torch.Tensor) -> torch.Tensor:
-    max_indices = validation_delta.argmax(dim=-1)
-    weights = torch.zeros_like(validation_delta)
-    weights.scatter_(1, max_indices.unsqueeze(1), 1.0)
-    return weights
-
-
 def ten_weights(energies: torch.Tensor, temperature: float) -> torch.Tensor:
     return energy_to_weights(energies, temperature=temperature)
 
 
 class FixedWeightPatchTSTModel(nn.Module):
-    """PatchTST forecaster with non-learned source weighting."""
+    """PatchTST forecaster with fixed source weighting and gated residual correction."""
 
     def __init__(
         self,
@@ -69,19 +60,37 @@ class FixedWeightPatchTSTModel(nn.Module):
         self.seq_len = seq_len
         self.target_channels = target_channels
         self.weighting_fn = weighting_fn
-        self.forecast_head = PatchTSTGaussianForecaster(
-            input_channels=target_channels + 1,
-            context_length=seq_len,
-            horizon=horizon,
-            d_model=d_model,
-            patch_len=patch_len,
-            stride=stride,
-            n_heads=n_heads,
-            n_layers=n_layers,
-            d_ff=d_ff,
-            dropout=dropout,
-            target_channel_index=target_channels - 1,
+        self.forecast_head = nn.ModuleDict(
+            {
+                "base": PatchTSTGaussianForecaster(
+                    input_channels=target_channels,
+                    context_length=seq_len,
+                    horizon=horizon,
+                    d_model=d_model,
+                    patch_len=patch_len,
+                    stride=stride,
+                    n_heads=n_heads,
+                    n_layers=n_layers,
+                    d_ff=d_ff,
+                    dropout=dropout,
+                    target_channel_index=target_channels - 1,
+                ),
+                "residual": PatchTSTGaussianForecaster(
+                    input_channels=target_channels + 1,
+                    context_length=seq_len,
+                    horizon=horizon,
+                    d_model=d_model,
+                    patch_len=patch_len,
+                    stride=stride,
+                    n_heads=n_heads,
+                    n_layers=n_layers,
+                    d_ff=d_ff,
+                    dropout=dropout,
+                    target_channel_index=target_channels - 1,
+                ),
+            }
         )
+        self.source_residual_logit = nn.Parameter(torch.tensor(-4.0))
 
     def forward(
         self,
@@ -96,12 +105,17 @@ class FixedWeightPatchTSTModel(nn.Module):
         )
         pooled_source_sequence = torch.sum(weights.unsqueeze(-1) * source_candidates, dim=1).unsqueeze(-1)
         target_sequence = target_context.view(target_context.shape[0], self.seq_len, self.target_channels)
+        base_mean, base_scale = self.forecast_head["base"](target_sequence)
         forecast_input = torch.cat([target_sequence, pooled_source_sequence], dim=-1)
-        mean, scale = self.forecast_head(forecast_input)
+        residual_mean, _ = self.forecast_head["residual"](forecast_input)
+        residual_gate = torch.sigmoid(self.source_residual_logit)
+        mean = base_mean + residual_gate * residual_mean
+        scale = base_scale
         dummy_energies = torch.zeros_like(weights)
         return {
             "energies": dummy_energies,
             "weights": weights,
             "mean": mean,
             "scale": scale,
+            "source_residual_gate": residual_gate.detach(),
         }

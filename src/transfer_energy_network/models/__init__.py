@@ -3,7 +3,6 @@
 from .baselines import (
     FixedWeightPatchTSTModel,
     correlation_weights,
-    oracle_weights,
     ten_weights,
     uniform_weights,
 )
@@ -22,7 +21,6 @@ __all__ = [
     "TransferEnergyNetwork",
     "correlation_weights",
     "energy_to_weights",
-    "oracle_weights",
     "ten_weights",
     "uniform_weights",
 ]

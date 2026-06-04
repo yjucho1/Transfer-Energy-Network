@@ -9,7 +9,7 @@ import random
 
 import torch
 
-from ..config import ExperimentConfig
+from ..config import ExperimentConfig, load_experiment_config
 from ..data import generate_episode_split, generate_ltsf_episode_split, get_dataset_profile
 from ..models.baselines import FixedWeightPatchTSTModel, correlation_weights, uniform_weights
 from ..models.energy_model import TransferEnergyNetwork
@@ -35,6 +35,7 @@ def build_model(
         hidden_dim=config.model.hidden_dim,
         horizon=horizon,
         seq_len=config.data.seq_len,
+        source_pooling=config.model.source_pooling,
         forecast_backbone=config.model.forecast_backbone,
         forecast_patch_len=config.model.forecast_patch_len,
         forecast_patch_stride=config.model.forecast_patch_stride,
@@ -43,6 +44,8 @@ def build_model(
         forecast_d_ff=config.model.forecast_d_ff,
         forecast_dropout=config.model.forecast_dropout,
         energy_top_k=config.model.energy_top_k,
+        energy_logit_clip=config.model.energy_logit_clip,
+        energy_center_logits=config.model.energy_center_logits,
     )
 
 
@@ -63,6 +66,37 @@ def build_target_only_model(
         d_ff=config.model.forecast_d_ff,
         dropout=config.model.forecast_dropout,
     )
+
+
+def get_target_only_config_path(config: ExperimentConfig) -> Path:
+    return Path("configs") / f"target_only_{config.data.dataset_name}_patchtst.toml"
+
+
+def load_target_only_base_state(
+    config: ExperimentConfig,
+    target_dim: int,
+    horizon: int,
+) -> dict[str, torch.Tensor]:
+    target_only_config = load_experiment_config(get_target_only_config_path(config))
+    target_only_model = build_target_only_model(
+        target_only_config,
+        target_dim=target_dim,
+        horizon=horizon,
+    )
+    payload = torch.load(get_best_checkpoint_path(target_only_config), map_location="cpu", weights_only=False)
+    target_only_model.load_state_dict(payload["state_dict"])
+    return target_only_model.forecaster.state_dict()
+
+
+def initialize_frozen_base_from_target_only(
+    config: ExperimentConfig,
+    base_forecaster: torch.nn.Module,
+    target_dim: int,
+    horizon: int,
+) -> None:
+    base_forecaster.load_state_dict(load_target_only_base_state(config, target_dim=target_dim, horizon=horizon))
+    for parameter in base_forecaster.parameters():
+        parameter.requires_grad_(False)
 
 
 def build_fixed_weight_model(
@@ -124,22 +158,32 @@ def train_ten_model(
         source_dim=sample_batch.source_candidates.shape[-1],
         horizon=sample_batch.forecast_target.shape[-1],
     )
+    initialize_frozen_base_from_target_only(
+        config,
+        model.forecast_head["base"],
+        target_dim=sample_batch.target_context.shape[-1],
+        horizon=sample_batch.forecast_target.shape[-1],
+    )
     task_parameters = (
         list(model.target_encoder.parameters())
         + list(model.source_encoder.parameters())
         + list(model.energy_mlp.parameters())
-        + list(model.forecast_head.parameters())
+        + list(model.forecast_head["residual"].parameters())
+        + [model.source_residual_logit]
     )
     optimizer_task = torch.optim.Adam(task_parameters, lr=config.optim.lr)
     loss_parameters = list(model.future_encoder.parameters()) + list(model.trajectory_energy_mlp.parameters())
     optimizer_loss = torch.optim.Adam(loss_parameters, lr=config.optim.lr_loss)
     train_config = TrainingConfig(
         forecast_loss_weight=config.optim.forecast_loss_weight,
+        base_forecast_loss_weight=config.optim.base_forecast_loss_weight,
         forecast_loss_type=config.optim.forecast_loss_type,
         energy_temperature=config.model.energy_temperature,
-        target_temperature=config.optim.target_temperature,
         energy_margin=config.optim.energy_margin,
+        energy_nce_temperature=config.optim.energy_nce_temperature,
+        energy_metric_temperature=config.optim.energy_metric_temperature,
         trajectory_energy_weight=config.optim.trajectory_energy_weight,
+        trajectory_energy_num_samples=config.optim.trajectory_energy_num_samples,
     )
 
     train_history: list[dict] = []
@@ -156,6 +200,7 @@ def train_ten_model(
     for epoch in range(1, config.optim.epochs + 1):
         epoch_losses: list[float] = []
         epoch_forecast: list[float] = []
+        epoch_base_forecast: list[float] = []
         epoch_energy: list[float] = []
         epoch_trajectory_energy: list[float] = []
 
@@ -163,6 +208,7 @@ def train_ten_model(
             metrics = train_step(model, optimizer_task, optimizer_loss, batch.as_dict(), train_config)
             epoch_losses.append(float(metrics["loss"].item()))
             epoch_forecast.append(float(metrics["forecast_loss"].item()))
+            epoch_base_forecast.append(float(metrics["base_forecast_loss"].item()))
             epoch_energy.append(float(metrics["energy_loss"].item()))
             epoch_trajectory_energy.append(float(metrics["trajectory_energy_loss"].item()))
 
@@ -171,6 +217,7 @@ def train_ten_model(
                 "epoch": epoch,
                 "loss": sum(epoch_losses) / len(epoch_losses),
                 "forecast_loss": sum(epoch_forecast) / len(epoch_forecast),
+                "base_forecast_loss": sum(epoch_base_forecast) / len(epoch_base_forecast),
                 "energy_loss": sum(epoch_energy) / len(epoch_energy),
                 "trajectory_energy_loss": sum(epoch_trajectory_energy) / len(epoch_trajectory_energy),
             }
@@ -371,7 +418,16 @@ def train_fixed_weight_experiment(config: ExperimentConfig) -> ExperimentSummary
         horizon=sample_batch.forecast_target.shape[-1],
         selector=config.selector,
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.optim.lr)
+    initialize_frozen_base_from_target_only(
+        config,
+        model.forecast_head["base"],
+        target_dim=sample_batch.target_context.shape[-1],
+        horizon=sample_batch.forecast_target.shape[-1],
+    )
+    optimizer = torch.optim.Adam(
+        list(model.forecast_head["residual"].parameters()) + [model.source_residual_logit],
+        lr=config.optim.lr,
+    )
 
     train_history: list[dict] = []
     validation_history: list[dict] = []

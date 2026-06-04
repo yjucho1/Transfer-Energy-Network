@@ -2,256 +2,423 @@
 
 Energy-based transferability learning for probabilistic long-term time series forecasting.
 
-## Problem Definition
+## Overview
 
-This repository defines the research problem as multivariate long-term forecasting (LTSF).
+This repository studies when source time series help or hurt target forecasting on the ETT family.
 
-Given an input window of length `L`, the model predicts a future horizon `H` for a target series while leveraging transferable information from heterogeneous source series or source-specific components. The central question is not simply which source looks similar, but which source improves long-horizon forecasting performance on the target domain.
+The current codebase focuses on:
 
-The default protocol in this repository follows common LTSF benchmark settings:
+- probabilistic long-term forecasting with a PatchTST backbone
+- independent per-variable forecasting episodes
+- source-conditioned residual correction on top of a frozen target-only base model
+- structural energy learning over forecast corrections
 
-- task: `long_term_forecast`
-- feature mode: multivariate-to-multivariate (`M`)
-- default look-back: `seq_len = 96`
-- standard prediction horizons: `96, 192, 336, 720`
+The current question is:
 
-## Dataset Assumption
+How should source information be used to improve a target-only forecast, and can an energy model learn to prefer better forecast corrections?
 
-We assume the experimental data is prepared with ProbTS and stored under `./datasets`.
+## Current Problem Setup
 
-ProbTS documents long-term forecasting dataset preparation with:
+The active ETTh1 experiments use:
 
-```bash
-bash scripts/prepare_datasets.sh "./datasets"
-```
+- lookback: `seq_len = 96`
+- horizon: `pred_len = 96`
+- feature mode: multivariate CSV input, but independent univariate forecasting episodes
 
-and then configures long-term forecasting runs with dataset keys such as `etth1`, `etth2`, `ettm1`, `ettm2`, `traffic_ltsf`, `electricity_ltsf`, `exchange_ltsf`, `illness_ltsf`, and `weather_ltsf`. [Source](https://github.com/microsoft/ProbTS)
+Each training sample is:
 
-The earlier Google Drive link can still be viewed as a compatible benchmark-bundle assumption, but the repository is now organized around the ProbTS preparation path and naming convention.
+- one target variable history of length `96`
+- one target future of length `96`
+- a source pool containing:
+  - the other variables from the same dataset
+  - variables from external ETT datasets
 
-Under that assumption, the benchmark suite in this repository targets the standard LTSF datasets commonly used together in that ecosystem:
+For ETTh1, the current source pool size is `27`:
 
-- `etth1`, `etth2`, `ettm1`, `ettm2`
-- `electricity_ltsf`
-- `traffic_ltsf`
-- `weather_ltsf`
-- `exchange_ltsf`
-- `illness_ltsf`
+- `6` same-dataset variables
+- `21` cross-dataset variables from `ETTh2`, `ETTm1`, and `ETTm2`
 
-The dataset registry is encoded in [datasets.py](/Users/lisa.cho/Transfer-Energy-Network/src/transfer_energy_network/data/datasets.py:1), and experiment metadata such as `dataset_bundle`, `dataset_name`, `file_name`, `seq_len`, and `pred_len` is now part of each config.
+This means the current default setting is:
 
-For dataset descriptions, long-horizon benchmark references such as Nixtla's long-horizon dataset page list the same family of groups: `ETTh1`, `ETTh2`, `ETTm1`, `ETTm2`, `ECL`, `Exchange`, `Traffic`, `Weather`, and `ILI`. [Source](https://nixtlaverse.nixtla.io/datasetsforecast/long_horizon2.html)
+- target context: univariate
+- prediction target: univariate
+- source pool: same-dataset others + other-dataset variables
 
-## Motivation
+## Current Model
 
-Transfer learning can help forecasting models adapt quickly when a target time series has limited history. In practice, however, heterogeneous source series often cause negative transfer, especially in long-horizon settings where mismatched trend, seasonality, and domain dynamics are amplified across longer prediction windows. The usual workaround is to preselect source series with hand-crafted similarity measures such as correlation, dynamic time warping, or latent-distance heuristics. Those signals may correlate with similarity, but they do not directly answer the question that matters most:
+The current TEN model is a residual-correction model.
 
-Which source component will improve target probabilistic forecasting performance?
+### Base Forecast
 
-This repository frames source selection as a learned energy-based decision problem. A Transfer Energy Network (TEN) assigns:
+The base forecaster is a target-only PatchTST model:
 
-- low energy to source components that improve target validation likelihood
-- high energy to source components that harm adaptation
+\[
+\hat y_{\text{base}} = F_{\text{base}}(t)
+\]
 
-The resulting energy scores can then be used to:
+In the current implementation, this base model is:
 
-- select a subset of source adapters
-- reweight source gradients during adaptation
-- gate transferred representations before the target forecasting head
+- first trained as `target_only`
+- loaded into TEN from the saved best checkpoint
+- frozen during TEN training
 
-## Core Idea
+So the TEN base forecast is exactly the same model as the target-only baseline.
 
-Let `x_tgt` denote target context windows and let `s_i` denote a candidate transferable source component. The transferability scorer learns an energy
+### Source Residual
 
-`E_theta(x_tgt, s_i) -> R`
+TEN then predicts a source-conditioned correction:
 
-where lower values imply higher transfer utility. A normalized weight can be obtained from the negative energies:
+\[
+\Delta \hat y = F_{\text{res}}(t, S)
+\]
 
-`w_i = softmax(-E_theta(x_tgt, s_i) / tau)`
+with a learned scalar gate:
 
-These weights are used to aggregate source information before passing it to a probabilistic forecaster.
+\[
+\alpha = \sigma(a)
+\]
 
-## Minimal Architecture In This Starter
+and the final forecast is:
 
-This starter keeps the implementation intentionally small:
+\[
+\hat y = \hat y_{\text{base}} + \alpha \Delta \hat y
+\]
 
-1. A target encoder maps each target window into a compact representation.
-2. A source encoder maps candidate source summaries into the same latent space.
-3. An energy MLP scores target-source compatibility.
-4. A weighting module converts energies into transfer weights.
-5. A probabilistic forecasting head predicts a Gaussian mean and scale.
+### Current Source Aggregation
 
-The code is designed so we can later swap in:
+The current ETTh1 TEN config uses:
 
-- adapter banks instead of simple source embeddings
-- gradient-level transfer instead of representation-level transfer
-- richer likelihood heads such as Negative Binomial, Student-t, or quantile mixtures
+- `source_pooling = "average"`
 
-## Validation-Delta Supervision
+So sources are encoded independently and then averaged:
 
-To learn actual transfer utility rather than static similarity, this starter now includes a small supervision recipe for the energy scorer.
+\[
+z_{s_i} = \mathrm{Enc}_s(s_i), \qquad
+z_S = \frac{1}{K}\sum_{i=1}^K z_{s_i}
+\]
 
-For each target episode and candidate source, define a validation delta:
+For the residual forecasting branch, the raw source sequences are also averaged before being passed to the residual PatchTST branch.
 
-`Delta_i = val_metric(target with source_i) - val_metric(target alone)`
+## Two Energy Formulations Explored
 
-When the validation metric is a likelihood-like score where larger is better, positive `Delta_i` means the source helped and negative `Delta_i` means it hurt. We transform these deltas into a soft target distribution and train the energy model so that:
+This repository has explored two closely related but importantly different energy objectives.
 
-- lower energy aligns with larger positive validation deltas
-- higher energy aligns with harmful or unhelpful sources
+### 1. Plausibility-Oriented Energy
 
-In code, the joint objective is:
+The first formulation treats energy as a plausibility score:
 
-- forecast loss: Gaussian negative log-likelihood on the target horizon
-- transfer loss: cross-entropy between `softmax(Delta / tau)` and `softmax(-E / tau)`
+\[
+E_\theta(t,S,Y)
+\]
 
-For the current real CSV loader, `Delta_i` is now closer to true adaptation. The default path can use a lightweight PatchTST-style adaptation model: for each batch of target windows, it fits a target-only forecaster and source-conditioned forecasters on adaptation samples extracted from the target history, compares their held-out validation losses, and uses that improvement as the main supervision signal. A very small history-agreement term is kept only as a tie-breaker.
+or, in the residual version,
+
+\[
+E_{\text{corr}}(t,S,\Delta y)
+\]
+
+The key idea is:
+
+- lower energy for more plausible futures or corrections
+- higher energy for less plausible ones
+
+This is the SEAL-style view of energy as a trainable structural loss.
+
+In earlier versions of the project, this was implemented by contrasting:
+
+- ground-truth future or correction
+- current predicted future or correction
+
+This formulation successfully learned energy separation, but in ETTh1 the resulting plausibility improvement did not reliably translate into better forecasting metrics.
+
+### 2. Metric-Guided Energy
+
+The second formulation tries to align the energy model more directly with forecasting quality.
+
+Instead of defining positives and negatives only by structural plausibility, it defines them using actual forecast metric quality over a candidate correction set.
+
+For a candidate correction `\Delta y`, the model evaluates the quality of:
+
+\[
+\hat y(\Delta y) = \hat y_{\text{base}} + \Delta y
+\]
+
+and then chooses the best candidate according to the forecast metric.
+
+In the current code, positives and negatives are selected from:
+
+- the current predicted correction
+- Monte Carlo sampled corrections from the predictive distribution
+
+The best candidate under a sample-wise forecasting metric becomes the positive example, and the others are treated as negatives in an NCE loss.
+
+This gives a more metric-aligned formulation:
+
+- plausibility-oriented energy asks: “is this correction structurally reasonable?”
+- metric-guided energy asks: “does this correction actually improve the forecast metric?”
+
+## Structural Correction Energy
+
+The current energy model scores forecast corrections rather than full futures:
+
+\[
+E_{\text{corr}}(t, S, \Delta y)
+\]
+
+where:
+
+- `t` is the target past
+- `S` is the pooled source context
+- `\Delta y` is a candidate correction to the frozen base forecast
+
+The ground-truth correction is:
+
+\[
+\Delta y^* = y - \hat y_{\text{base}}
+\]
+
+## Current Training Objective
+
+### Loss-Net
+
+The current loss-net uses the metric-guided energy version with an NCE objective.
+
+For each batch item, the code builds a candidate correction set:
+
+- the current predicted correction
+- several sampled corrections from the predictive distribution
+
+The candidate with the best sample-wise forecast metric is used as the positive example, and the rest are negatives.
+
+In the current implementation, this positive/negative selection is metric-based and uses sample-wise CRPS-style scoring.
+
+The NCE loss is:
+
+\[
+\mathcal{L}_{E}^{\text{NCE}}
+=
+-\log
+\frac{
+\exp(-E_{\text{corr}}(t,S,\Delta y^+)/\tau)
+}{
+\sum_{\Delta y \in \mathcal{C}} \exp(-E_{\text{corr}}(t,S,\Delta y)/\tau)
+}
+\]
+
+where `\Delta y^+` is the metric-best candidate correction from the candidate set `\mathcal{C}`.
+
+### Task-Net
+
+The task objective is:
+
+\[
+\mathcal{L}_{\text{task}}
+=
+\lambda_f \,\ell(y,\hat y)
++
+\lambda_b \,\ell(y,\hat y_{\text{base}})
++
+\lambda_E \,\mathbb{E}_{\Delta Y \sim p_\phi}[E_{\text{corr}}(t,S,\Delta Y)]
+\]
+
+In practice:
+
+- `\ell` is `CRPS`
+- the expectation term is approximated with Monte Carlo samples from the predictive distribution
+- the sampled correction energies are weighted by metric quality
+
+### Alternating Optimization
+
+Each training step alternates:
+
+1. loss-net update
+
+- updates: `future_encoder`, `trajectory_energy_mlp`
+- freezes: target encoder, source encoder, residual forecaster, base forecaster
+
+2. task-net update
+
+- updates: target encoder, source encoder, residual forecaster
+- base forecaster remains frozen
+- loss-net remains frozen
+
+## Current ETTh1 Status
+
+The current ETTh1 comparison is fully fair:
+
+- the same target-only checkpoint is used as the frozen base for TEN, correlation, and uniform
+- all methods operate on the same independent all-variables setup
+
+### Latest ETTh1 Results
+
+The table below corresponds to the current **metric-guided energy** setup:
+
+- frozen target-only base forecaster
+- source residual correction
+- correction energy trained with metric-guided NCE
+- task-side Monte Carlo energy regularization
+- average source pooling for TEN
+- fair frozen-base comparison against target-only, correlation, and uniform
+
+| Method | MSE | MAE | CRPS | Mean Q |
+|---|---:|---:|---:|---:|
+| Correlation | 0.53508 | 0.49932 | 0.37428 | 0.17009 |
+| Target-only | 0.53623 | 0.49920 | 0.37408 | 0.16993 |
+| Uniform | 0.53712 | 0.50045 | 0.37497 | 0.17037 |
+| TEN | 0.53895 | 0.50157 | 0.37570 | 0.17067 |
+
+### ETTh1: Two Energy Formulations
+
+For ETTh1, we also keep track of the two TEN energy variants directly:
+
+| TEN Energy Variant | MSE | MAE | CRPS | Mean Q |
+|---|---:|---:|---:|---:|
+| Plausibility-oriented energy | 0.53823 | 0.50120 | 0.37549 | 0.17059 |
+| Metric-guided energy | 0.53895 | 0.50157 | 0.37570 | 0.17067 |
+
+Here:
+
+- **plausibility-oriented energy** means the energy model is trained to assign lower energy to structurally plausible corrections, using the earlier GT-vs-predicted correction contrastive formulation
+- **metric-guided energy** means positive and negative corrections are chosen using forecast-metric quality over the candidate correction set
+
+In the current ETTh1 setting, the two formulations are extremely close, which supports the broader conclusion that ETTh1 offers only limited headroom for source-conditioned correction.
+
+### Current Interpretation
+
+For ETTh1 in the current independent setting:
+
+- all methods are very close
+- correlation is slightly best
+- TEN does not outperform target-only or correlation
+- the source residual gate stays small
+
+This table should be read as the result of the **metric-guided energy formulation**, not the earlier plausibility-only formulation.
+
+The current working conclusion is:
+
+In ETTh1 all-variables independent forecasting, source-conditioned correction has very limited headroom, so increasingly sophisticated energy objectives do not translate into clear forecasting gains.
+
+## Diagnostics
+
+The most useful current diagnostics are structural-energy diagnostics rather than source-ranking diagnostics.
+
+### Delta-E
+
+We use:
+
+\[
+\Delta E_\theta(t,S,Y)
+=
+E_\theta(t,S,Y)-E_\theta(t,\varnothing,Y)
+\]
+
+This measures how much the source context changes the energy of a candidate correction or future.
+
+Current ETTh1 diagnosis shows:
+
+- source context consistently lowers correction energy
+- but that lower energy does not correlate strongly with sample-wise forecast gain
+
+So the main bottleneck is not “source is useless,” but rather:
+
+energy-space plausibility improvement does not cleanly translate into forecasting-metric improvement.
+
+This is the clearest difference between the two energy formulations:
+
+- plausibility-oriented energy can show that source information makes corrections look more reasonable
+- metric-guided energy asks whether those corrections actually improve CRPS or MSE
+
+In the current ETTh1 setting, both views suggest that source usefulness exists, but its headroom is small and difficult for TEN to exploit better than simple correlation-based weighting.
 
 ## Repository Layout
 
 ```text
 configs/
   ten_etth1_patchtst.toml
-  correlation_etth1_patchtst.toml
-  uniform_etth1_patchtst.toml
+  ten_etth2_patchtst.toml
+  ten_ettm1_patchtst.toml
+  ten_ettm2_patchtst.toml
+  target_only_*.toml
+  correlation_*.toml
+  uniform_*.toml
 scripts/
   run_experiment.py
-  run_dataset_grid.sh
-  run_all_etth1.sh
-  run_all_etth2.sh
-  run_all_ettm1.sh
-  run_all_ettm2.sh
-  render_ett_horizon_table.py
+  plot_sample_forecast.py
+  diagnose_structural_energy.py
+  diagnose_source_contribution.py
+  plot_structural_energy_diagnosis.py
 src/transfer_energy_network/
-  __init__.py
   config.py
   data/
-    __init__.py
     datasets.py
     episodes.py
     ltsf.py
   models/
-    __init__.py
     baselines.py
     energy_model.py
     forecasting.py
+    target_only.py
     weighting.py
   training/
-    __init__.py
     evaluation.py
     experiment.py
     losses.py
     trainer.py
-examples/
-  smoke_test.py
-  train_synthetic.py
-pyproject.toml
+results/
 ```
 
-## Paper-Oriented Experiment Design
-
-논문 작성을 위한 실험 구조는 아래 흐름으로 설계되어 있습니다.
-
-1. `configs/*.toml`에서 실험 설정을 고정합니다.
-2. `data/datasets.py`와 `config.py`가 long-term forecasting dataset metadata를 고정합니다.
-3. `data/episodes.py`가 target-source episodic split을 생성합니다.
-This repository now also includes a real CSV-based LTSF loader in [ltsf.py](/Users/lisa.cho/Transfer-Energy-Network/src/transfer_energy_network/data/ltsf.py:1), which reads the ProbTS-prepared files under `./datasets`, builds train/val/test sliding windows, normalizes using training statistics, and converts them into TEN training episodes.
-4. `experiment.py`가 TEN 또는 baseline selector를 실행합니다.
-5. `evaluation.py`가 forecasting NLL, source top-1 alignment, oracle hit rate를 계산합니다.
-6. 각 실험은 `results/*.json`으로 저장되어 표와 ablation 정리에 바로 사용할 수 있습니다.
-
-이 구조로 다음 비교가 쉬워집니다.
-
-- TEN vs correlation vs uniform
-- ETTh1/ETTh2/ETTm1/ETTm2/Electricity/Traffic/Weather/Exchange/ILI across the same protocol
-- energy temperature ablation
-- transfer loss weight ablation
-- source pool size 변화
-- prediction horizon `96/192/336/720` 변화
-- noisy or heterogeneous source 비율 변화
-
-## Next Research Steps
-
-- Replace synthetic source summaries with learned source adapters.
-- Compare TEN against correlation, DTW, and representation-distance baselines.
-- Extend the forecasting head beyond Gaussian likelihoods for count or intermittent series.
-- Add real target adaptation episodes and derive validation deltas from actual fine-tuning.
-
-## Quick Start
-
-If your environment already has PyTorch installed:
+## Environment
 
 ```bash
-python3 examples/smoke_test.py
+source /Users/lisa.cho/miniconda3/etc/profile.d/conda.sh
+conda activate lisa_env
+cd /Users/lisa.cho/Transfer-Energy-Network
 ```
 
-The example builds a tiny TEN model, computes energy-based source weights, and returns Gaussian forecasting parameters for a synthetic batch.
+## Main Commands
 
-To exercise the joint training scaffold:
+Run ETTh1 TEN:
 
 ```bash
-python3 examples/train_synthetic.py
+python scripts/run_experiment.py configs/ten_etth1_patchtst.toml
 ```
 
-This synthetic example creates episodes with one more-useful source per target batch, uses validation deltas as supervision, and optimizes the forecasting head and energy scorer together.
-
-To run a paper-style experiment and save a summary:
+Run ETTh1 target-only:
 
 ```bash
-python3 scripts/run_experiment.py configs/ten_etth1_patchtst.toml
-python3 scripts/run_experiment.py configs/correlation_etth1_patchtst.toml
-python3 scripts/run_experiment.py configs/uniform_etth1_patchtst.toml
+python scripts/run_experiment.py configs/target_only_etth1_patchtst.toml
 ```
 
-Each run writes a JSON summary with train history, validation history, and test metrics.
-
-To run the standard ETT horizon grid `96/192/336/720` for one dataset:
+Run ETTh1 correlation:
 
 ```bash
-bash scripts/run_all_etth1.sh
-bash scripts/run_all_etth2.sh
-bash scripts/run_all_ettm1.sh
-bash scripts/run_all_ettm2.sh
+python scripts/run_experiment.py configs/correlation_etth1_patchtst.toml
 ```
 
-These scripts now run five seeds by default: `21, 22, 23, 24, 25`.
-
-If you want to override that list, you can pass explicit seeds:
+Run ETTh1 uniform:
 
 ```bash
-bash scripts/run_all_etth1.sh 1 2 3 4 5
+python scripts/run_experiment.py configs/uniform_etth1_patchtst.toml
 ```
 
-The scripts expand the base config into temporary horizon-specific runs and save results with names such as:
-
-```text
-results/etth1_h96_s21_patchtst_transferability_ten.json
-results/etth1_h192_s21_patchtst_transferability_ten.json
-results/etth1_h336_s21_patchtst_transferability_ten.json
-results/etth1_h720_s21_patchtst_transferability_ten.json
-```
-
-To render a horizon-specific benchmark table after the runs complete:
+Run structural energy diagnosis:
 
 ```bash
-python3 scripts/render_ett_horizon_table.py
+python scripts/diagnose_structural_energy.py \
+  configs/ten_etth1_patchtst.toml \
+  --output results/etth1_structural_energy_diagnosis.json
 ```
 
-When multiple seed runs are present, the table renderer reports `mean ± std`. If only one run is present, it prints the single value.
+Run source contribution diagnosis:
 
-When you replace the current synthetic episode generator with real loaders, the expected dataset location is:
-
-```text
-./datasets/
-  ETT-small/ETTh1.csv
-  ETT-small/ETTh2.csv
-  ETT-small/ETTm1.csv
-  ETT-small/ETTm2.csv
-  electricity/electricity.csv
-  traffic/traffic.csv
-  weather/weather.csv
-  exchange_rate/exchange_rate.csv
-  illness/national_illness.csv
+```bash
+python scripts/diagnose_source_contribution.py \
+  configs/ten_etth1_patchtst.toml \
+  --output results/etth1_source_contribution_diagnosis.json
 ```
 
-This path layout matches the files prepared in the current workspace by the ProbTS dataset script.
+## Notes
+
+- `label_len` remains in config for compatibility but is not used by the active PatchTST path.
+- The older `validation_delta`-based ranking pipeline has been removed from the current code path.
+- ETTh1 is now an independent all-variables benchmark rather than the earlier `OT`-only setup.

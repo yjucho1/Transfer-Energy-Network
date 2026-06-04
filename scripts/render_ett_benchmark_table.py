@@ -28,21 +28,20 @@ def load_metrics(path: str) -> dict:
 
 
 def main() -> None:
-    header = "| Dataset | Method | MSE | MAE | CRPS | Mean Q | Top-1 |"
-    rule = "|---|---|---:|---:|---:|---:|---:|"
+    header = "| Dataset | Method | MSE | MAE | CRPS | Mean Q |"
+    rule = "|---|---|---:|---:|---:|---:|"
     rows = [header, rule]
 
     for dataset, path, method in RESULT_SPECS:
         metrics = load_metrics(path)
         rows.append(
-            "| {dataset} | {method} | {mse:.6f} | {mae:.6f} | {crps:.6f} | {mean_q:.6f} | {top1:.6f} |".format(
+            "| {dataset} | {method} | {mse:.6f} | {mae:.6f} | {crps:.6f} | {mean_q:.6f} |".format(
                 dataset=dataset,
                 method=method,
                 mse=metrics["forecast_mse"],
                 mae=metrics["forecast_mae"],
                 crps=metrics["forecast_crps"],
                 mean_q=metrics["forecast_mean_quantile_loss"],
-                top1=metrics["top1_alignment"],
             )
         )
 

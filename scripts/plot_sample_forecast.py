@@ -17,9 +17,7 @@ if SRC_ROOT not in sys.path:
 
 from transfer_energy_network.config import load_experiment_config
 from transfer_energy_network.data import load_ltsf_series
-from transfer_energy_network.models.baselines import oracle_weights
 from transfer_energy_network.training.losses import gaussian_quantile
-from transfer_energy_network.training.evaluation import build_forecast_from_weights
 from transfer_energy_network.training.experiment import (
     build_fixed_weight_model,
     build_target_only_model,
@@ -178,12 +176,6 @@ def main() -> None:
             temperature=config.model.energy_temperature,
         )
         uniform_pred = uniform_outputs["mean"][sample_idx].cpu()
-    oracle_pred, _ = build_forecast_from_weights(
-        batch,
-        oracle_weights(batch.validation_delta),
-        config,
-    )
-
     actual = batch.forecast_target[sample_idx].cpu()
     target_history = denormalize_target(target_history, target_mean, target_std)
     actual = denormalize_target(actual, target_mean, target_std)
@@ -193,7 +185,6 @@ def main() -> None:
     target_only_pred = denormalize_target(target_only_pred, target_mean, target_std)
     correlation_pred = denormalize_target(correlation_pred, target_mean, target_std)
     uniform_pred = denormalize_target(uniform_pred, target_mean, target_std)
-    oracle_pred = denormalize_target(oracle_pred[sample_idx].cpu(), target_mean, target_std)
 
     future_x = torch.arange(seq_len, seq_len + actual.shape[0]).cpu()
     history_x = torch.arange(seq_len).cpu()
@@ -236,18 +227,6 @@ def main() -> None:
         color="#55A868",
         linewidth=1.8,
         zorder=2,
-    )
-    plt.plot(
-        future_x,
-        oracle_pred,
-        label="Oracle",
-        color="#8172B2",
-        linewidth=2.2,
-        linestyle="--",
-        marker="o",
-        markersize=3,
-        markevery=max(1, actual.shape[0] // 20),
-        zorder=5,
     )
     plt.title(f"Forecast Comparison on {config.data.dataset_name} Test Sample {sample_idx}")
     plt.xlabel("Time Step")

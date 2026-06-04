@@ -1,0 +1,47 @@
+{
+  "dataset": "etth1",
+  "mean_delta_e_gt": -15.939733505249023,
+  "mean_delta_e_pred": -13.382316589355469,
+  "negative_delta_e_gt_rate": 1.0,
+  "negative_delta_e_pred_rate": 1.0,
+  "delta_e_gt_std": 3.933060646057129,
+  "delta_e_pred_std": 2.282416343688965,
+  "num_test_samples": 1792,
+  "per_target": {
+    "HUFL": {
+      "mean_delta_e_gt": -16.130638416856527,
+      "mean_delta_e_pred": -12.965973496437073,
+      "num_samples": 256
+    },
+    "HULL": {
+      "mean_delta_e_gt": -16.54943936690688,
+      "mean_delta_e_pred": -13.402110774070024,
+      "num_samples": 256
+    },
+    "LUFL": {
+      "mean_delta_e_gt": -17.27108819037676,
+      "mean_delta_e_pred": -13.67557381093502,
+      "num_samples": 256
+    },
+    "LULL": {
+      "mean_delta_e_gt": -14.803093615919352,
+      "mean_delta_e_pred": -13.405645817518234,
+      "num_samples": 256
+    },
+    "MUFL": {
+      "mean_delta_e_gt": -15.78589990362525,
+      "mean_delta_e_pred": -12.879729647189379,
+      "num_samples": 256
+    },
+    "MULL": {
+      "mean_delta_e_gt": -16.102132741361856,
+      "mean_delta_e_pred": -13.437030538916588,
+      "num_samples": 256
+    },
+    "OT": {
+      "mean_delta_e_gt": -14.935845423489809,
+      "mean_delta_e_pred": -13.910153094679117,
+      "num_samples": 256
+    }
+  }
+}

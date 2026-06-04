@@ -20,26 +20,10 @@ class DataConfig:
     episode_mode: str = "real"
     task_name: str = "long_term_forecast"
     features: str = "M"
-    target: str = "OT"
     freq: str = "h"
     seq_len: int = 96
     label_len: int = 48
     pred_len: int = 336
-    adaptation_backbone: str = "ridge"
-    adaptation_lag: int = 24
-    adaptation_ridge: float = 1e-2
-    adaptation_val_ratio: float = 0.25
-    adaptation_min_samples: int = 8
-    adaptation_delta_alpha: float = 0.5
-    adaptation_patch_len: int = 8
-    adaptation_patch_stride: int = 4
-    adaptation_d_model: int = 16
-    adaptation_n_heads: int = 2
-    adaptation_n_layers: int = 1
-    adaptation_d_ff: int = 32
-    adaptation_dropout: float = 0.1
-    adaptation_epochs: int = 2
-    adaptation_lr: float = 1e-3
     train_ratio: float = 0.7
     val_ratio: float = 0.1
     test_ratio: float = 0.2
@@ -63,8 +47,11 @@ class DataConfig:
 @dataclass
 class ModelConfig:
     hidden_dim: int = 24
+    source_pooling: str = "energy"
     energy_temperature: float = 0.7
     energy_top_k: int = 0
+    energy_logit_clip: float = 0.0
+    energy_center_logits: bool = True
     forecast_backbone: str = "patchtst"
     forecast_patch_len: int = 8
     forecast_patch_stride: int = 4
@@ -82,14 +69,13 @@ class OptimConfig:
     early_stopping_patience: int = 5
     early_stopping_min_delta: float = 1e-4
     forecast_loss_weight: float = 1.0
+    base_forecast_loss_weight: float = 1.0
     forecast_loss_type: str = "crps"
-    transfer_loss_weight: float = 0.5
-    target_temperature: float = 0.7
-    ranking_margin: float = 0.2
-    ranking_delta_threshold: float = 0.05
-    usage_energy_weight: float = 0.1
     energy_margin: float = 0.2
+    energy_nce_temperature: float = 1.0
+    energy_metric_temperature: float = 0.1
     trajectory_energy_weight: float = 0.1
+    trajectory_energy_num_samples: int = 4
 
 
 @dataclass

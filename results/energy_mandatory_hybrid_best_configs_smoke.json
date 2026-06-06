@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "config_path": "configs/energy_mandatory_hybrid_etth1.toml",
+      "name": "etth1_energy_mandatory_hybrid_best",
+      "dataset": "etth1",
+      "correlation_temperature": 4.5,
+      "correlation_test_metrics": {
+        "forecast_mse": 0.5347054695178356,
+        "forecast_mae": 0.49905678975795,
+        "forecast_crps": 0.3741235152951309,
+        "forecast_q10_loss": 0.13536091075677956,
+        "forecast_q50_loss": 0.249528394878975,
+        "forecast_q90_loss": 0.12520333911691392,
+        "forecast_mean_quantile_loss": 0.17003088198336108
+      },
+      "ranker_val_pairwise_accuracy": 0.47728010905640467,
+      "mode": "hybrid_gate_entropy",
+      "params": {
+        "lam": 0.2,
+        "th": 0.14
+      },
+      "val_metrics": {
+        "forecast_mse": 0.39555210371812183,
+        "forecast_mae": 0.4220748618245125,
+        "forecast_crps": 0.31738592418176786,
+        "forecast_mean_quantile_loss": 0.14422940737789586
+      },
+      "test_metrics": {
+        "forecast_mse": 0.5338186932993787,
+        "forecast_mae": 0.49850789457559586,
+        "forecast_crps": 0.373493361286819,
+        "forecast_mean_quantile_loss": 0.16969915885212167
+      }
+    }
+  ]
+}

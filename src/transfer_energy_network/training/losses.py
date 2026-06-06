@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import torch
+import torch.nn.functional as F
 
 
 def gaussian_nll(
@@ -88,3 +89,21 @@ def correction_energy_nce_loss(
     negative_logits = -negative_energies / temperature
     all_logits = torch.cat([positive_logits.unsqueeze(-1), negative_logits], dim=-1)
     return -(positive_logits - torch.logsumexp(all_logits, dim=-1)).mean()
+
+
+def pairwise_source_ranking_loss(
+    energies: torch.Tensor,
+    pseudo_gain: torch.Tensor,
+    margin: float = 0.0,
+) -> torch.Tensor:
+    """Pairwise ranking loss for sample-level source preferences.
+
+    For any pair (i, j) such that pseudo_gain_i - pseudo_gain_j > margin,
+    source i should receive lower energy than source j.
+    """
+    gain_diff = pseudo_gain.unsqueeze(2) - pseudo_gain.unsqueeze(1)
+    valid = gain_diff > margin
+    if not valid.any():
+        return energies.new_zeros(())
+    energy_gap = energies.unsqueeze(1) - energies.unsqueeze(2)
+    return -F.logsigmoid(energy_gap[valid]).mean()

@@ -16,15 +16,19 @@ class EpisodeBatch:
     target_context: torch.Tensor
     source_candidates: torch.Tensor
     forecast_target: torch.Tensor
+    pseudo_gain: torch.Tensor | None = None
     source_labels: list[list[str]] | None = None
     metadata: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, torch.Tensor]:
-        return {
+        batch = {
             "target_context": self.target_context,
             "source_candidates": self.source_candidates,
             "forecast_target": self.forecast_target,
         }
+        if self.pseudo_gain is not None:
+            batch["pseudo_gain"] = self.pseudo_gain
+        return batch
 
 
 def make_synthetic_batch(config: DataConfig) -> EpisodeBatch:

@@ -8,6 +8,22 @@ from torch import nn
 from .forecasting import PatchTSTGaussianForecaster
 
 
+def gaussian_crps_per_sample(
+    target: torch.Tensor,
+    mean: torch.Tensor,
+    scale: torch.Tensor,
+) -> torch.Tensor:
+    """Closed-form Gaussian CRPS averaged over horizon, per sample."""
+    scale = scale.clamp_min(1e-6)
+    two = torch.tensor(2.0, dtype=target.dtype, device=target.device)
+    pi = torch.tensor(torch.pi, dtype=target.dtype, device=target.device)
+    z = (target - mean) / scale
+    pdf = torch.exp(-0.5 * z.pow(2)) / torch.sqrt(two * pi)
+    cdf = 0.5 * (1.0 + torch.erf(z / torch.sqrt(two)))
+    crps = scale * (z * (2.0 * cdf - 1.0) + 2.0 * pdf - 1.0 / torch.sqrt(pi))
+    return crps.mean(dim=-1)
+
+
 class RelativeLagBias(nn.Module):
     """Learned relative lag bias for lead-lag-aware attention."""
 
@@ -104,6 +120,7 @@ class LeadAwareSourceProposer(nn.Module):
             "entropy": entropy,
             "gap": gap,
             "attn_maps": attn_maps_t,
+            "attended_states": attended_t,
         }
 
 
@@ -135,6 +152,11 @@ class LeadSelectiveHybridModel(nn.Module):
         proposer_dropout: float = 0.1,
         gate_hidden_dim: int = 16,
         gate_feature_mode: str = "basic",
+        source_pool_mode: str = "raw",
+        scale_mode: str = "var_blend",
+        gate_target_mode: str = "crps",
+        hard_gate_inference: bool = False,
+        hard_gate_threshold: float = 0.5,
         patch_len: int = 8,
         stride: int = 4,
         n_heads: int = 2,
@@ -146,6 +168,11 @@ class LeadSelectiveHybridModel(nn.Module):
         self.seq_len = seq_len
         self.horizon = horizon
         self.gate_feature_mode = gate_feature_mode
+        self.source_pool_mode = source_pool_mode
+        self.scale_mode = scale_mode
+        self.gate_target_mode = gate_target_mode
+        self.hard_gate_inference = hard_gate_inference
+        self.hard_gate_threshold = hard_gate_threshold
         self.base_forecaster = PatchTSTGaussianForecaster(
             input_channels=1,
             context_length=seq_len,
@@ -178,7 +205,8 @@ class LeadSelectiveHybridModel(nn.Module):
             temperature=proposer_temperature,
             dropout=proposer_dropout,
         )
-        gate_input_dim = 3 if gate_feature_mode == "basic" else 4
+        self.attended_pool_proj = nn.Linear(proposer_hidden_dim, 1)
+        gate_input_dim = 6 if gate_feature_mode == "basic" else 7
         self.gate = SelectiveGate(input_dim=gate_input_dim, hidden_dim=gate_hidden_dim)
 
     def load_frozen_base(self, state_dict: dict[str, torch.Tensor]) -> None:
@@ -194,18 +222,34 @@ class LeadSelectiveHybridModel(nn.Module):
     ) -> dict[str, torch.Tensor]:
         proposer_out = self.proposer(target_context, source_candidates)
         weights = proposer_out["weights"]
-        pooled_source = torch.sum(weights.unsqueeze(-1) * source_candidates, dim=1)
 
         target_sequence = target_context.unsqueeze(-1)
-        source_sequence = pooled_source.unsqueeze(-1)
+        if self.source_pool_mode == "raw":
+            pooled_source = torch.sum(weights.unsqueeze(-1) * source_candidates, dim=1)
+            source_sequence = pooled_source.unsqueeze(-1)
+        elif self.source_pool_mode == "attended":
+            pooled_attended = torch.sum(
+                weights.unsqueeze(-1).unsqueeze(-1) * proposer_out["attended_states"],
+                dim=1,
+            )
+            source_sequence = self.attended_pool_proj(pooled_attended)
+            pooled_source = source_sequence.squeeze(-1)
+        else:
+            raise ValueError(f"Unsupported source_pool_mode: {self.source_pool_mode}")
         base_mean, base_scale = self.base_forecaster(target_sequence)
         source_mean, source_scale = self.source_forecaster(torch.cat([target_sequence, source_sequence], dim=-1))
 
         pred_diff_norm = (source_mean - base_mean).pow(2).mean(dim=-1).sqrt()
+        base_scale_mean = base_scale.mean(dim=-1)
+        source_scale_mean = source_scale.mean(dim=-1)
+        scale_ratio = source_scale_mean / base_scale_mean.clamp_min(1e-6)
         gate_feature_columns = [
             proposer_out["entropy"],
             proposer_out["gap"],
             pred_diff_norm,
+            base_scale_mean,
+            source_scale_mean,
+            scale_ratio,
         ]
         attn_entropy = None
         if self.gate_feature_mode == "attn":
@@ -215,15 +259,40 @@ class LeadSelectiveHybridModel(nn.Module):
             gate_feature_columns.append(attn_entropy)
         gate_features = torch.stack(gate_feature_columns, dim=-1)
         gate = self.gate(gate_features)
-        gate_expanded = gate.unsqueeze(-1)
+        if (not self.training) and self.hard_gate_inference:
+            gate_used = (gate >= self.hard_gate_threshold).float()
+        else:
+            gate_used = gate
+        gate_expanded = gate_used.unsqueeze(-1)
         final_mean = (1.0 - gate_expanded) * base_mean + gate_expanded * source_mean
-        final_scale = base_scale
+        if self.scale_mode == "base":
+            final_scale = base_scale
+        elif self.scale_mode == "var_blend":
+            base_var = base_scale.pow(2)
+            source_var = source_scale.pow(2)
+            final_var = (1.0 - gate_expanded) * base_var + gate_expanded * source_var
+            final_scale = final_var.clamp_min(1e-6).sqrt()
+        elif self.scale_mode == "moment_match":
+            second_moment = (
+                (1.0 - gate_expanded) * (base_scale.pow(2) + base_mean.pow(2))
+                + gate_expanded * (source_scale.pow(2) + source_mean.pow(2))
+            )
+            final_var = (second_moment - final_mean.pow(2)).clamp_min(1e-6)
+            final_scale = final_var.sqrt()
+        else:
+            raise ValueError(f"Unsupported scale_mode: {self.scale_mode}")
 
         if forecast_target is None:
             gate_target = None
         else:
-            base_loss = (forecast_target - base_mean).pow(2).mean(dim=-1)
-            source_loss = (forecast_target - source_mean).pow(2).mean(dim=-1)
+            if self.gate_target_mode == "mse":
+                base_loss = (forecast_target - base_mean).pow(2).mean(dim=-1)
+                source_loss = (forecast_target - source_mean).pow(2).mean(dim=-1)
+            elif self.gate_target_mode == "crps":
+                base_loss = gaussian_crps_per_sample(forecast_target, base_mean, base_scale)
+                source_loss = gaussian_crps_per_sample(forecast_target, source_mean, source_scale)
+            else:
+                raise ValueError(f"Unsupported gate_target_mode: {self.gate_target_mode}")
             gate_target = (source_loss < base_loss).float()
 
         return {
@@ -234,11 +303,16 @@ class LeadSelectiveHybridModel(nn.Module):
             "source_mean": source_mean,
             "source_scale": source_scale,
             "weights": weights,
+            "pooled_source": pooled_source,
             "proposer_scores": proposer_out["scores"],
             "proposer_entropy": proposer_out["entropy"],
             "proposer_gap": proposer_out["gap"],
             "attention_entropy": attn_entropy,
             "gate": gate,
+            "gate_used": gate_used,
             "gate_target": gate_target,
             "pred_diff_norm": pred_diff_norm,
+            "base_scale_mean": base_scale_mean,
+            "source_scale_mean": source_scale_mean,
+            "scale_ratio": scale_ratio,
         }

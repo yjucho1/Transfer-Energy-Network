@@ -1,0 +1,130 @@
+{
+  "config": {
+    "dataset_name": "etth1",
+    "file_name": "ETT-small/ETTh1.csv",
+    "source_pool_datasets": [
+      "etth2",
+      "ettm1",
+      "ettm2"
+    ],
+    "seq_len": 96,
+    "pred_len": 96,
+    "window_stride": 8,
+    "max_windows_per_split": 256,
+    "top_k": 2,
+    "ridge": 10.0
+  },
+  "aggregate": {
+    "mean_baseline_test_loss": 0.7054825936044965,
+    "mean_topk_test_loss": 0.7415057591029576,
+    "mean_oracle_best_single_test_loss": 0.6750459128192493,
+    "mean_topk_gain_over_baseline": -0.03602316549846104
+  },
+  "per_target": [
+    {
+      "target_label": "HUFL",
+      "baseline_val_loss": 1.4176565408706665,
+      "baseline_test_loss": 1.5015455484390259,
+      "topk_test_loss": 1.6110987663269043,
+      "oracle_best_single_test_loss": 1.4496102333068848,
+      "top_sources": [
+        "etth2:HULL",
+        "etth2:MULL"
+      ],
+      "top_source_gains": [
+        0.47211164236068726,
+        0.3974674940109253
+      ]
+    },
+    {
+      "target_label": "HULL",
+      "baseline_val_loss": 0.3391728401184082,
+      "baseline_test_loss": 0.5138958096504211,
+      "topk_test_loss": 0.4662642776966095,
+      "oracle_best_single_test_loss": 0.4492436349391937,
+      "top_sources": [
+        "ettm2:HUFL",
+        "ettm2:MUFL"
+      ],
+      "top_source_gains": [
+        0.0003947317600250244,
+        -0.004672348499298096
+      ]
+    },
+    {
+      "target_label": "MUFL",
+      "baseline_val_loss": 1.4020366668701172,
+      "baseline_test_loss": 1.2973195314407349,
+      "topk_test_loss": 1.3730944395065308,
+      "oracle_best_single_test_loss": 1.2577426433563232,
+      "top_sources": [
+        "etth2:MULL",
+        "etth2:HULL"
+      ],
+      "top_source_gains": [
+        0.5137478709220886,
+        0.5066619515419006
+      ]
+    },
+    {
+      "target_label": "MULL",
+      "baseline_val_loss": 0.29718202352523804,
+      "baseline_test_loss": 0.44056424498558044,
+      "topk_test_loss": 0.4457697570323944,
+      "oracle_best_single_test_loss": 0.39646807312965393,
+      "top_sources": [
+        "ettm1:OT",
+        "ettm1:LULL"
+      ],
+      "top_source_gains": [
+        0.026598483324050903,
+        0.008766412734985352
+      ]
+    },
+    {
+      "target_label": "LUFL",
+      "baseline_val_loss": 1.2431284189224243,
+      "baseline_test_loss": 0.881756067276001,
+      "topk_test_loss": 0.9472577571868896,
+      "oracle_best_single_test_loss": 0.8727829456329346,
+      "top_sources": [
+        "ettm1:LUFL",
+        "ettm2:LULL"
+      ],
+      "top_source_gains": [
+        0.17953813076019287,
+        0.17353487014770508
+      ]
+    },
+    {
+      "target_label": "LULL",
+      "baseline_val_loss": 0.17691047489643097,
+      "baseline_test_loss": 0.17277570068836212,
+      "topk_test_loss": 0.18842487037181854,
+      "oracle_best_single_test_loss": 0.17539341747760773,
+      "top_sources": [
+        "ettm2:MUFL",
+        "ettm1:LULL"
+      ],
+      "top_source_gains": [
+        -0.013207435607910156,
+        -0.01734107732772827
+      ]
+    },
+    {
+      "target_label": "OT",
+      "baseline_val_loss": 0.09250824898481369,
+      "baseline_test_loss": 0.1305212527513504,
+      "topk_test_loss": 0.15863044559955597,
+      "oracle_best_single_test_loss": 0.12408044189214706,
+      "top_sources": [
+        "ettm1:LULL",
+        "ettm2:LUFL"
+      ],
+      "top_source_gains": [
+        -0.006716519594192505,
+        -0.03329000622034073
+      ]
+    }
+  ]
+}

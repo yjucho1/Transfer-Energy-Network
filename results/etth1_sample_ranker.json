@@ -1,0 +1,177 @@
+{
+  "config": {
+    "experiment_config": "configs/ten_etth1_patchtst.toml",
+    "pseudolabel_dir": "results/pseudolabels/etth1_sample_level",
+    "margin": 0.02,
+    "epochs": 15,
+    "lr": 0.001
+  },
+  "best_epoch": 1,
+  "best_val_pairwise_accuracy": 0.5089725342154542,
+  "history": [
+    {
+      "epoch": 1,
+      "train_ranking_loss": 0.6916252741856235,
+      "train_pairwise_accuracy": 0.5188482113955919,
+      "val_ranking_loss": 0.7004428527184895,
+      "val_pairwise_accuracy": 0.5089725342154542,
+      "val_mean_selected_gain": -0.15855881304568833,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.26711309523809523
+    },
+    {
+      "epoch": 2,
+      "train_ranking_loss": 0.6899772382208279,
+      "train_pairwise_accuracy": 0.520009290766943,
+      "val_ranking_loss": 0.7321578349385943,
+      "val_pairwise_accuracy": 0.5002188432306648,
+      "val_mean_selected_gain": -0.168302071890572,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.24702380952380953
+    },
+    {
+      "epoch": 3,
+      "train_ranking_loss": 0.687761129545314,
+      "train_pairwise_accuracy": 0.5344066912498219,
+      "val_ranking_loss": 0.7310083685886293,
+      "val_pairwise_accuracy": 0.49704562884795483,
+      "val_mean_selected_gain": -0.24059631350627614,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.24851190476190477
+    },
+    {
+      "epoch": 4,
+      "train_ranking_loss": 0.6822410981569972,
+      "train_pairwise_accuracy": 0.5573186806913998,
+      "val_ranking_loss": 0.7370859483877817,
+      "val_pairwise_accuracy": 0.4989604994675852,
+      "val_mean_selected_gain": -0.32601627899289487,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.27157738095238093
+    },
+    {
+      "epoch": 5,
+      "train_ranking_loss": 0.6759167952196938,
+      "train_pairwise_accuracy": 0.5568542509835076,
+      "val_ranking_loss": 0.7838461988029026,
+      "val_pairwise_accuracy": 0.49917934177538564,
+      "val_mean_selected_gain": -0.31890356250195984,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.27901785714285715
+    },
+    {
+      "epoch": 6,
+      "train_ranking_loss": 0.6758311891130039,
+      "train_pairwise_accuracy": 0.5588667866375177,
+      "val_ranking_loss": 0.8356180183944248,
+      "val_pairwise_accuracy": 0.48626764489773755,
+      "val_mean_selected_gain": -0.33563345859182026,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.27157738095238093
+    },
+    {
+      "epoch": 7,
+      "train_ranking_loss": 0.6722331254609993,
+      "train_pairwise_accuracy": 0.5560027873846425,
+      "val_ranking_loss": 0.8811611809900829,
+      "val_pairwise_accuracy": 0.48593938060448066,
+      "val_mean_selected_gain": -0.3221355544491893,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.28273809523809523
+    },
+    {
+      "epoch": 8,
+      "train_ranking_loss": 0.6691942715219089,
+      "train_pairwise_accuracy": 0.5724901326721007,
+      "val_ranking_loss": 0.8739414066076279,
+      "val_pairwise_accuracy": 0.476529161401671,
+      "val_mean_selected_gain": -0.3475861670449376,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.25595238095238093
+    },
+    {
+      "epoch": 9,
+      "train_ranking_loss": 0.6672609618731907,
+      "train_pairwise_accuracy": 0.5738060238957636,
+      "val_ranking_loss": 1.0124313235282898,
+      "val_pairwise_accuracy": 0.4791552686175393,
+      "val_mean_selected_gain": -0.34975491739099934,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.2611607142857143
+    },
+    {
+      "epoch": 10,
+      "train_ranking_loss": 0.6598202298794474,
+      "train_pairwise_accuracy": 0.5892096909426418,
+      "val_ranking_loss": 1.056053565371604,
+      "val_pairwise_accuracy": 0.47330123581834377,
+      "val_mean_selected_gain": -0.3881780422026558,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.2544642857142857
+    },
+    {
+      "epoch": 11,
+      "train_ranking_loss": 0.6556885503232479,
+      "train_pairwise_accuracy": 0.5927703393664612,
+      "val_ranking_loss": 1.1197839698621206,
+      "val_pairwise_accuracy": 0.4678848881124863,
+      "val_mean_selected_gain": -0.3714946423701587,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.23511904761904762
+    },
+    {
+      "epoch": 12,
+      "train_ranking_loss": 0.6544973975313562,
+      "train_pairwise_accuracy": 0.5951699059102196,
+      "val_ranking_loss": 1.2351117474692208,
+      "val_pairwise_accuracy": 0.45989714318806707,
+      "val_mean_selected_gain": -0.38217270057204933,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.23586309523809523
+    },
+    {
+      "epoch": 13,
+      "train_ranking_loss": 0.6472544446587563,
+      "train_pairwise_accuracy": 0.6152179016746026,
+      "val_ranking_loss": 1.189806559965724,
+      "val_pairwise_accuracy": 0.45913119719128653,
+      "val_mean_selected_gain": -0.3860833085186425,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.22023809523809523
+    },
+    {
+      "epoch": 14,
+      "train_ranking_loss": 0.6416996044239828,
+      "train_pairwise_accuracy": 0.6201718407077164,
+      "val_ranking_loss": 1.2247240656898135,
+      "val_pairwise_accuracy": 0.453550717080366,
+      "val_mean_selected_gain": -0.403641462082132,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.22544642857142858
+    },
+    {
+      "epoch": 15,
+      "train_ranking_loss": 0.6363204856004033,
+      "train_pairwise_accuracy": 0.6227262184843946,
+      "val_ranking_loss": 1.319128081202507,
+      "val_pairwise_accuracy": 0.45442608542946605,
+      "val_mean_selected_gain": -0.4203958516896126,
+      "val_mean_oracle_gain": 0.20481596228533558,
+      "val_selected_positive_rate": 0.22395833333333334
+    }
+  ],
+  "val_metrics": {
+    "ranking_loss": 0.7004428527184895,
+    "pairwise_accuracy": 0.5089725342154542,
+    "mean_selected_gain": -0.15855881304568833,
+    "mean_oracle_gain": 0.20481596228533558,
+    "selected_positive_rate": 0.26711309523809523
+  },
+  "test_metrics": {
+    "ranking_loss": 0.710064346236842,
+    "pairwise_accuracy": 0.4509708954695905,
+    "mean_selected_gain": -0.3048495489471991,
+    "mean_oracle_gain": 0.11603913253306278,
+    "selected_positive_rate": 0.22209821428571427
+  }
+}

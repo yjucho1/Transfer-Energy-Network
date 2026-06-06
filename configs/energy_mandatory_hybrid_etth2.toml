@@ -1,0 +1,16 @@
+name = "etth2_energy_mandatory_hybrid_best"
+dataset = "etth2"
+seed = 21
+output_dir = "results"
+
+[correlation]
+temperature = 0.7
+
+[ranker]
+margin = 0.02
+epochs = 12
+lr = 0.001
+
+[hybrid]
+mode = "energy_gate_entropy"
+th = 3.2

@@ -1,0 +1,21 @@
+name = "ettm2_lead_selective_attended"
+dataset = "ettm2"
+seed = 21
+output_dir = "results"
+
+[selector]
+proposer_temperature = 1.0
+gate_usage_penalty = 0.005
+gate_aux_weight = 0.0
+gate_feature_mode = "basic"
+source_pool_mode = "attended"
+scale_mode = "base"
+gate_target_mode = "crps"
+
+[train]
+epochs = 8
+early_stopping_patience = 3
+lr = 0.001
+proposer_hidden_dim = 16
+proposer_dropout = 0.1
+gate_hidden_dim = 16

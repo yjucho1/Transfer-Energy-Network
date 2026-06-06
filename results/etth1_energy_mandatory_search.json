@@ -1,0 +1,34 @@
+{
+  "ranker_val_pairwise_accuracy": 0.48875501397110166,
+  "target_only": {
+    "forecast_mse": 0.5362316322113786,
+    "forecast_mae": 0.4991999864578247,
+    "forecast_crps": 0.37407791215394226,
+    "forecast_mean_quantile_loss": 0.16993025071652873
+  },
+  "best_energy_only": {
+    "mode": "energy_gate_entropy",
+    "params": {
+      "th": 3.0
+    },
+    "test_metrics": {
+      "forecast_mse": 0.5340179379231164,
+      "forecast_mae": 0.49863990848617895,
+      "forecast_crps": 0.3738167218065688,
+      "forecast_mean_quantile_loss": 0.1698783330752381
+    }
+  },
+  "best_energy_mandatory_hybrid": {
+    "mode": "hybrid_gate_entropy",
+    "params": {
+      "lam": 0.1,
+      "th": 0.12
+    },
+    "test_metrics": {
+      "forecast_mse": 0.5340971844270825,
+      "forecast_mae": 0.4986518658697605,
+      "forecast_crps": 0.37368811161390375,
+      "forecast_mean_quantile_loss": 0.1698051892620112
+    }
+  }
+}

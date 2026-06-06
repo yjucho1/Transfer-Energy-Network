@@ -1,0 +1,158 @@
+{
+  "config": {
+    "dataset_name": "etth1",
+    "file_name": "ETT-small/ETTh1.csv",
+    "source_pool_datasets": [
+      "etth2",
+      "ettm1",
+      "ettm2"
+    ],
+    "seq_len": 96,
+    "pred_len": 96,
+    "window_stride": 8,
+    "max_windows_per_split": 256,
+    "top_k": 4,
+    "ridge": 1.0
+  },
+  "aggregate": {
+    "mean_baseline_test_loss": 0.9201745476041522,
+    "mean_topk_test_loss": 1.2926924952438898,
+    "mean_oracle_best_single_test_loss": 0.8897518387862614,
+    "mean_topk_gain_over_baseline": -0.37251794763973783
+  },
+  "per_target": [
+    {
+      "target_label": "HUFL",
+      "baseline_val_loss": 3.269526720046997,
+      "baseline_test_loss": 1.9695314168930054,
+      "topk_test_loss": 3.0875189304351807,
+      "oracle_best_single_test_loss": 1.9608755111694336,
+      "top_sources": [
+        "etth2:MULL",
+        "etth2:HULL",
+        "etth2:HUFL",
+        "etth2:LUFL"
+      ],
+      "top_source_gains": [
+        1.8328794240951538,
+        1.6497973203659058,
+        1.4166409969329834,
+        1.2684555053710938
+      ]
+    },
+    {
+      "target_label": "HULL",
+      "baseline_val_loss": 0.41567909717559814,
+      "baseline_test_loss": 0.5811765193939209,
+      "topk_test_loss": 0.6615254878997803,
+      "oracle_best_single_test_loss": 0.5246408581733704,
+      "top_sources": [
+        "etth1:OT",
+        "ettm1:OT",
+        "etth1:MULL",
+        "ettm2:MUFL"
+      ],
+      "top_source_gains": [
+        -0.04582858085632324,
+        -0.06596976518630981,
+        -0.0778948962688446,
+        -0.10839730501174927
+      ]
+    },
+    {
+      "target_label": "MUFL",
+      "baseline_val_loss": 3.3069376945495605,
+      "baseline_test_loss": 1.6066354513168335,
+      "topk_test_loss": 2.2458128929138184,
+      "oracle_best_single_test_loss": 1.6054223775863647,
+      "top_sources": [
+        "etth2:MULL",
+        "etth2:HULL",
+        "etth2:OT",
+        "etth1:OT"
+      ],
+      "top_source_gains": [
+        1.730921983718872,
+        1.5252783298492432,
+        1.326342225074768,
+        1.0007655620574951
+      ]
+    },
+    {
+      "target_label": "MULL",
+      "baseline_val_loss": 0.43063926696777344,
+      "baseline_test_loss": 0.4978402853012085,
+      "topk_test_loss": 0.6286816000938416,
+      "oracle_best_single_test_loss": 0.45103785395622253,
+      "top_sources": [
+        "ettm1:OT",
+        "etth1:OT",
+        "etth1:HULL",
+        "ettm2:OT"
+      ],
+      "top_source_gains": [
+        0.03879573941230774,
+        0.023598313331604004,
+        -6.940960884094238e-05,
+        -0.029293149709701538
+      ]
+    },
+    {
+      "target_label": "LUFL",
+      "baseline_val_loss": 2.4332237243652344,
+      "baseline_test_loss": 1.423671841621399,
+      "topk_test_loss": 1.8499970436096191,
+      "oracle_best_single_test_loss": 1.3216853141784668,
+      "top_sources": [
+        "ettm2:OT",
+        "ettm2:LULL",
+        "ettm1:LUFL",
+        "ettm1:HULL"
+      ],
+      "top_source_gains": [
+        0.3904128074645996,
+        0.342710018157959,
+        0.3150310516357422,
+        0.1216590404510498
+      ]
+    },
+    {
+      "target_label": "LULL",
+      "baseline_val_loss": 0.24145829677581787,
+      "baseline_test_loss": 0.21578800678253174,
+      "topk_test_loss": 0.3005450367927551,
+      "oracle_best_single_test_loss": 0.2220716029405594,
+      "top_sources": [
+        "etth1:OT",
+        "ettm1:OT",
+        "ettm2:LULL",
+        "etth2:LULL"
+      ],
+      "top_source_gains": [
+        -0.014542698860168457,
+        -0.030609846115112305,
+        -0.034163057804107666,
+        -0.03625306487083435
+      ]
+    },
+    {
+      "target_label": "OT",
+      "baseline_val_loss": 0.19579780101776123,
+      "baseline_test_loss": 0.14657831192016602,
+      "topk_test_loss": 0.2747664749622345,
+      "oracle_best_single_test_loss": 0.14252935349941254,
+      "top_sources": [
+        "ettm1:LUFL",
+        "ettm1:LULL",
+        "ettm2:LUFL",
+        "ettm1:OT"
+      ],
+      "top_source_gains": [
+        0.03751756250858307,
+        -0.0011482536792755127,
+        -0.00556454062461853,
+        -0.04578663408756256
+      ]
+    }
+  ]
+}

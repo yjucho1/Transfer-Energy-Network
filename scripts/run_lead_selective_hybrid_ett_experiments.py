@@ -77,6 +77,11 @@ def build_lead_model(
     proposer_dropout: float,
     gate_hidden_dim: int,
     gate_feature_mode: str,
+    source_pool_mode: str,
+    scale_mode: str,
+    gate_target_mode: str,
+    hard_gate_inference: bool,
+    hard_gate_threshold: float,
 ) -> LeadSelectiveHybridModel:
     return LeadSelectiveHybridModel(
         seq_len=config.data.seq_len,
@@ -87,6 +92,11 @@ def build_lead_model(
         proposer_dropout=proposer_dropout,
         gate_hidden_dim=gate_hidden_dim,
         gate_feature_mode=gate_feature_mode,
+        source_pool_mode=source_pool_mode,
+        scale_mode=scale_mode,
+        gate_target_mode=gate_target_mode,
+        hard_gate_inference=hard_gate_inference,
+        hard_gate_threshold=hard_gate_threshold,
         patch_len=config.model.forecast_patch_len,
         stride=config.model.forecast_patch_stride,
         n_heads=config.model.forecast_n_heads,
@@ -192,6 +202,11 @@ def train_trial(
         proposer_dropout=args.proposer_dropout,
         gate_hidden_dim=args.gate_hidden_dim,
         gate_feature_mode=str(trial["gate_feature_mode"]),
+        source_pool_mode=str(trial["source_pool_mode"]),
+        scale_mode=str(trial["scale_mode"]),
+        gate_target_mode=str(trial["gate_target_mode"]),
+        hard_gate_inference=bool(args.hard_gate_inference),
+        hard_gate_threshold=float(args.hard_gate_threshold),
     )
     load_frozen_base_into_hybrid(model, target_config, target_ckpt, sample_batch)
     optimizer = torch.optim.Adam(
@@ -211,6 +226,11 @@ def train_trial(
     trial_slug = (
         f"{dataset}_pred{target_config.data.pred_len}_lead_selective_"
         f"{str(trial['gate_feature_mode'])}_"
+        f"{str(trial['source_pool_mode'])}_"
+        f"{str(trial['scale_mode'])}_"
+        f"{str(trial['gate_target_mode'])}_"
+        f"{'hard' if args.hard_gate_inference else 'soft'}"
+        f"{str(args.hard_gate_threshold).replace('.', 'p') if args.hard_gate_inference else ''}_"
         f"temp{str(trial['proposer_temperature']).replace('.', 'p')}_"
         f"usage{str(trial['gate_usage_penalty']).replace('.', 'p')}_"
         f"aux{str(trial['gate_aux_weight']).replace('.', 'p')}"
@@ -332,17 +352,23 @@ def dataset_sweep(dataset: str, pred_len: int, args: argparse.Namespace) -> dict
         target_ckpt,
     )
     trials: list[dict] = []
-    for proposer_temperature, gate_usage_penalty, gate_aux_weight, gate_feature_mode in itertools.product(
+    for proposer_temperature, gate_usage_penalty, gate_aux_weight, gate_feature_mode, source_pool_mode, scale_mode, gate_target_mode in itertools.product(
         args.proposer_temperature_sweep,
         args.gate_usage_penalty_sweep,
         args.gate_aux_weight_sweep,
         args.gate_feature_mode_sweep,
+        args.source_pool_mode_sweep,
+        args.scale_mode_sweep,
+        args.gate_target_mode_sweep,
     ):
         trial = {
             "proposer_temperature": proposer_temperature,
             "gate_usage_penalty": gate_usage_penalty,
             "gate_aux_weight": gate_aux_weight,
             "gate_feature_mode": gate_feature_mode,
+            "source_pool_mode": source_pool_mode,
+            "scale_mode": scale_mode,
+            "gate_target_mode": gate_target_mode,
         }
         trials.append(
             train_trial(
@@ -371,7 +397,7 @@ def dataset_sweep(dataset: str, pred_len: int, args: argparse.Namespace) -> dict
     }
 
 
-def write_markdown(path: Path, dataset_results: list[dict]) -> None:
+def write_markdown(path: Path, dataset_results: list[dict], args: argparse.Namespace) -> None:
     lines = [
         "# Lead-Selective Hybrid Sweep Summary",
         "",
@@ -384,6 +410,11 @@ def write_markdown(path: Path, dataset_results: list[dict]) -> None:
         trial = chosen["trial"]
         config_label = (
             f"`{trial['gate_feature_mode']}`, "
+            f"`pool={trial['source_pool_mode']}`, "
+            f"`scale={trial['scale_mode']}`, "
+            f"`target={trial['gate_target_mode']}`, "
+            f"`gate={'hard' if args.hard_gate_inference else 'soft'}"
+            f"{f'@{args.hard_gate_threshold}' if args.hard_gate_inference else ''}`, "
             f"`temp={trial['proposer_temperature']}`, "
             f"`usage={trial['gate_usage_penalty']}`, "
             f"`aux={trial['gate_aux_weight']}`"
@@ -413,6 +444,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate-usage-penalty-sweep", nargs="+", type=float, default=[0.005])
     parser.add_argument("--gate-aux-weight-sweep", nargs="+", type=float, default=[0.1])
     parser.add_argument("--gate-feature-mode-sweep", nargs="+", default=["basic"])
+    parser.add_argument("--source-pool-mode-sweep", nargs="+", default=["raw"])
+    parser.add_argument("--scale-mode-sweep", nargs="+", default=["var_blend"])
+    parser.add_argument("--gate-target-mode-sweep", nargs="+", default=["crps"])
+    parser.add_argument("--hard-gate-inference", action="store_true")
+    parser.add_argument("--hard-gate-threshold", type=float, default=0.5)
     parser.add_argument("--output-json", default="results/lead_selective_hybrid_ett_summary.json")
     parser.add_argument("--output-md", default="results/lead_selective_hybrid_ett_summary.md")
     return parser.parse_args()
@@ -428,7 +464,7 @@ def main() -> None:
     output_json = Path(args.output_json)
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(dataset_results, indent=2), encoding="utf-8")
-    write_markdown(Path(args.output_md), dataset_results)
+    write_markdown(Path(args.output_md), dataset_results, args)
     print(json.dumps(dataset_results, indent=2))
 
 

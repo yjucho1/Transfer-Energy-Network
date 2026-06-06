@@ -1,0 +1,227 @@
+{
+  "config": {
+    "name": "etth1_corr_temp_1p0",
+    "seed": 21,
+    "selector": "correlation",
+    "output_dir": "results",
+    "data": {
+      "dataset_bundle": "./datasets",
+      "dataset_name": "etth1",
+      "file_name": "ETT-small/ETTh1.csv",
+      "source_pool_datasets": [
+        "etth2",
+        "ettm1",
+        "ettm2"
+      ],
+      "episode_mode": "real",
+      "task_name": "long_term_forecast",
+      "features": "M",
+      "freq": "h",
+      "seq_len": 96,
+      "label_len": 48,
+      "pred_len": 96,
+      "train_ratio": 0.7,
+      "val_ratio": 0.1,
+      "test_ratio": 0.2,
+      "window_stride": 8,
+      "max_windows_per_split": 256,
+      "train_episodes": 100,
+      "val_episodes": 30,
+      "test_episodes": 30,
+      "batch_size": 16,
+      "num_sources": 27,
+      "target_dim": 10,
+      "source_dim": 10,
+      "horizon": 4,
+      "helpful_delta": 1.5,
+      "harmful_delta": -0.5,
+      "source_signal_scale": 0.4,
+      "target_signal_scale": 0.6,
+      "noise_scale": 0.1
+    },
+    "model": {
+      "hidden_dim": 24,
+      "source_pooling": "energy",
+      "energy_temperature": 1.0,
+      "energy_top_k": 0,
+      "energy_logit_clip": 0.0,
+      "energy_center_logits": true,
+      "forecast_backbone": "patchtst",
+      "forecast_patch_len": 8,
+      "forecast_patch_stride": 4,
+      "forecast_n_heads": 2,
+      "forecast_n_layers": 2,
+      "forecast_d_ff": 64,
+      "forecast_dropout": 0.1
+    },
+    "optim": {
+      "lr": 0.001,
+      "lr_loss": 0.0001,
+      "epochs": 20,
+      "early_stopping_patience": 5,
+      "early_stopping_min_delta": 0.0001,
+      "forecast_loss_weight": 1.0,
+      "base_forecast_loss_weight": 1.0,
+      "forecast_loss_type": "crps",
+      "energy_margin": 0.2,
+      "energy_nce_temperature": 1.0,
+      "energy_metric_temperature": 0.1,
+      "trajectory_energy_weight": 0.1,
+      "trajectory_energy_num_samples": 4
+    }
+  },
+  "train_history": [
+    {
+      "epoch": 1,
+      "loss": 0.28712125441857744,
+      "forecast_loss": 0.28712125441857744,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 2,
+      "loss": 0.2872028739324638,
+      "forecast_loss": 0.2872028739324638,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 3,
+      "loss": 0.2863353534734675,
+      "forecast_loss": 0.2863353534734675,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 4,
+      "loss": 0.2857998505766903,
+      "forecast_loss": 0.2857998505766903,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 5,
+      "loss": 0.28547277567642076,
+      "forecast_loss": 0.28547277567642076,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 6,
+      "loss": 0.28530442754604984,
+      "forecast_loss": 0.28530442754604984,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 7,
+      "loss": 0.2846224237499492,
+      "forecast_loss": 0.2846224237499492,
+      "transfer_loss": 0.0
+    },
+    {
+      "epoch": 8,
+      "loss": 0.284059085617108,
+      "forecast_loss": 0.284059085617108,
+      "transfer_loss": 0.0
+    }
+  ],
+  "validation_history": [
+    {
+      "epoch": 1,
+      "forecast_mse": 0.39462049802144367,
+      "forecast_mae": 0.42166388708920705,
+      "forecast_crps": 0.31736161630778087,
+      "forecast_q10_loss": 0.11273366257193543,
+      "forecast_q50_loss": 0.21083194354460352,
+      "forecast_q90_loss": 0.1088764120248102,
+      "forecast_mean_quantile_loss": 0.1441473395874103
+    },
+    {
+      "epoch": 2,
+      "forecast_mse": 0.394344926767406,
+      "forecast_mae": 0.42145934026865733,
+      "forecast_crps": 0.31717283260964213,
+      "forecast_q10_loss": 0.11284360023481506,
+      "forecast_q50_loss": 0.21072967013432867,
+      "forecast_q90_loss": 0.10864810481490124,
+      "forecast_mean_quantile_loss": 0.14407379277760074
+    },
+    {
+      "epoch": 3,
+      "forecast_mse": 0.39370487222359296,
+      "forecast_mae": 0.4215120456758,
+      "forecast_crps": 0.3169824287650131,
+      "forecast_q10_loss": 0.11264039327700932,
+      "forecast_q50_loss": 0.2107560228379,
+      "forecast_q90_loss": 0.10866180572303988,
+      "forecast_mean_quantile_loss": 0.14401940611146746
+    },
+    {
+      "epoch": 4,
+      "forecast_mse": 0.39403205914866357,
+      "forecast_mae": 0.4216988221520469,
+      "forecast_crps": 0.3170691512170292,
+      "forecast_q10_loss": 0.11245254551370938,
+      "forecast_q50_loss": 0.21084941107602345,
+      "forecast_q90_loss": 0.1089823567530229,
+      "forecast_mean_quantile_loss": 0.14409477086294264
+    },
+    {
+      "epoch": 5,
+      "forecast_mse": 0.39592851645180155,
+      "forecast_mae": 0.4222942643931934,
+      "forecast_crps": 0.31767423096157255,
+      "forecast_q10_loss": 0.11244467025001843,
+      "forecast_q50_loss": 0.2111471321965967,
+      "forecast_q90_loss": 0.10958868438111884,
+      "forecast_mean_quantile_loss": 0.14439349559446177
+    },
+    {
+      "epoch": 6,
+      "forecast_mse": 0.39620711583466756,
+      "forecast_mae": 0.4225649152483259,
+      "forecast_crps": 0.31773923337459564,
+      "forecast_q10_loss": 0.11220871036251386,
+      "forecast_q50_loss": 0.21128245762416295,
+      "forecast_q90_loss": 0.10978136690599578,
+      "forecast_mean_quantile_loss": 0.14442417814972855
+    },
+    {
+      "epoch": 7,
+      "forecast_mse": 0.397301902196237,
+      "forecast_mae": 0.42327365030845004,
+      "forecast_crps": 0.3181896720613752,
+      "forecast_q10_loss": 0.11207679854262442,
+      "forecast_q50_loss": 0.21163682515422502,
+      "forecast_q90_loss": 0.1102706299030355,
+      "forecast_mean_quantile_loss": 0.14466141678747677
+    },
+    {
+      "epoch": 8,
+      "forecast_mse": 0.39852706839640933,
+      "forecast_mae": 0.42355744043986004,
+      "forecast_crps": 0.3185115364335832,
+      "forecast_q10_loss": 0.11196950432800111,
+      "forecast_q50_loss": 0.21177872021993002,
+      "forecast_q90_loss": 0.11083852273545095,
+      "forecast_mean_quantile_loss": 0.14486224913880938
+    }
+  ],
+  "test_metrics": {
+    "forecast_mse": 0.5350510448749576,
+    "forecast_mae": 0.49929463357797693,
+    "forecast_crps": 0.37426353951117824,
+    "forecast_q10_loss": 0.13544711397428597,
+    "forecast_q50_loss": 0.24964731678898847,
+    "forecast_q90_loss": 0.12516550493559667,
+    "forecast_mean_quantile_loss": 0.17008664645254612
+  },
+  "best_epoch": 3,
+  "best_validation_metrics": {
+    "epoch": 3,
+    "forecast_mse": 0.39370487222359296,
+    "forecast_mae": 0.4215120456758,
+    "forecast_crps": 0.3169824287650131,
+    "forecast_q10_loss": 0.11264039327700932,
+    "forecast_q50_loss": 0.2107560228379,
+    "forecast_q90_loss": 0.10866180572303988,
+    "forecast_mean_quantile_loss": 0.14401940611146746
+  },
+  "best_checkpoint": "results/etth1_corr_temp_1p0_correlation_best.pt",
+  "stopped_epoch": 8
+}

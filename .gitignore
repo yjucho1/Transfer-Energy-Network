@@ -1,3 +1,14 @@
 __pycache__/
 *.pyc
 datasets/
+
+# Experiment artifacts
+results/*_best.pt
+results/*pseudolabels*/
+results/**/pseudolabels/
+
+# Runtime/cache files
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.DS_Store

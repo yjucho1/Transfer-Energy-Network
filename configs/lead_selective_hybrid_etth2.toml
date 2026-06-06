@@ -1,0 +1,18 @@
+name = "etth2_lead_selective_best"
+dataset = "etth2"
+seed = 21
+output_dir = "results"
+
+[selector]
+proposer_temperature = 0.7
+gate_usage_penalty = 0.005
+gate_aux_weight = 0.0
+gate_feature_mode = "basic"
+
+[train]
+epochs = 8
+early_stopping_patience = 3
+lr = 0.001
+proposer_hidden_dim = 16
+proposer_dropout = 0.1
+gate_hidden_dim = 16

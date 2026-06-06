@@ -8,6 +8,7 @@ from .baselines import (
 )
 from .energy_model import TransferEnergyNetwork
 from .forecasting import GaussianForecastHead, PatchTSTGaussianForecaster
+from .lead_selective_hybrid import LeadSelectiveHybridModel
 from .patchtst_adaptation import PatchTSTAdaptationModel
 from .target_only import TargetOnlyPatchTSTModel
 from .weighting import energy_to_weights
@@ -15,6 +16,7 @@ from .weighting import energy_to_weights
 __all__ = [
     "GaussianForecastHead",
     "FixedWeightPatchTSTModel",
+    "LeadSelectiveHybridModel",
     "PatchTSTGaussianForecaster",
     "PatchTSTAdaptationModel",
     "TargetOnlyPatchTSTModel",
